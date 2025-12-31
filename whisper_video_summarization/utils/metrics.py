@@ -1,18 +1,15 @@
-from typing import List
 from rouge_score import rouge_scorer
 
 
 def compute_rouge(
-    predictions: List[str],
-    references: List[str],
+    predictions: list[str],
+    references: list[str],
 ) -> dict[str, float]:
-    scorer = rouge_scorer.RougeScorer(
-        ["rouge1", "rouge2", "rougeL"], use_stemmer=True
-    )
+    scorer = rouge_scorer.RougeScorer(["rouge1", "rouge2", "rougeL"], use_stemmer=True)
 
     scores = {"rouge1": [], "rouge2": [], "rougeL": []}
 
-    for pred, ref in zip(predictions, references):
+    for pred, ref in zip(predictions, references, strict=False):
         result = scorer.score(ref, pred)
         for key in scores:
             scores[key].append(result[key].fmeasure)

@@ -1,5 +1,4 @@
 from pathlib import Path
-from typing import List
 
 import torch
 from transformers import T5Tokenizer
@@ -9,13 +8,13 @@ from whisper_video_summarization.models.summarizer import T5Summarizer
 
 def infer(
     model_checkpoint: Path,
-    texts: List[str],
+    texts: list[str],
     model_name: str,
     max_length: int,
     device: str,
-) -> List[str]:
+) -> list[str]:
     tokenizer = T5Tokenizer.from_pretrained(model_name)
-  
+
     if model_checkpoint.exists():
         model = T5Summarizer.load_from_checkpoint(
             checkpoint_path=str(model_checkpoint),
@@ -49,7 +48,7 @@ def infer(
                 length_penalty=2.0,
                 early_stopping=True,
                 no_repeat_ngram_size=4,
-                do_sample=False
+                do_sample=False,
             )
             summary = tokenizer.decode(
                 generated_ids[0], skip_special_tokens=True, clean_up_tokenization_spaces=True

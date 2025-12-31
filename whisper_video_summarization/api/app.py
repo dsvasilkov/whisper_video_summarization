@@ -1,17 +1,18 @@
 import logging
-from fastapi import FastAPI, BackgroundTasks
 from pathlib import Path
 
+from fastapi import BackgroundTasks, FastAPI
+
+from whisper_video_summarization.api.infer import run_infer
 from whisper_video_summarization.api.schemas import (
-    TrainRequest,
     InferRequest,
     InferResponse,
     InferVideoRequest,
+    TrainRequest,
 )
-from whisper_video_summarization.api.infer import run_infer
 from whisper_video_summarization.api.train import run_training
+from whisper_video_summarization.utils.dvc import add_whisper_to_dvc, dvc_pull
 from whisper_video_summarization.whisper.transcribe import transcribe_video
-from whisper_video_summarization.utils.dvc import dvc_pull, dvc_repro, add_whisper_to_dvc
 
 app = FastAPI(title="Whisper Video Summarization")
 
@@ -39,20 +40,20 @@ def infer_text(request: InferRequest):
 async def infer_video(request: InferVideoRequest):
     logger = logging.getLogger("app")
     video_path = Path(request.path)
-    
+
     if not video_path.is_absolute():
         video_path = Path("/app") / video_path
-    
+
     logger.info(f"Starting video transcription for: {video_path}")
-    
+
     if not video_path.exists():
         logger.error(f"Video file not found: {video_path}")
         raise FileNotFoundError(f"Video file not found: {video_path}")
-    
+
     try:
         text = transcribe_video(video_path)
         summary = run_infer(text)
-        logger.info(f"Video transcription completed")
+        logger.info("Video transcription completed")
         return {
             "transcription": text,
             "summary": summary,

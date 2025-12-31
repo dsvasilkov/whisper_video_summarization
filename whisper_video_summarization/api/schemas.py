@@ -1,10 +1,9 @@
 from pydantic import BaseModel
-from typing import Optional
 
 
 class TrainRequest(BaseModel):
     config_path: str
-    dataset_path: Optional[str] = None
+    dataset_path: str | None = None
 
 
 class InferRequest(BaseModel):

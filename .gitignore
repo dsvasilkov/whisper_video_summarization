@@ -11,6 +11,7 @@ venv/
 env/
 ENV/
 patch.py
+node_modules
 
 .idea/
 .vscode/

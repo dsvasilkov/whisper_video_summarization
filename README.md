@@ -53,6 +53,7 @@ docker-compose build
 ```
 
 Это создаст три образа:
+
 - `fastapi` - сервис с FastAPI и зависимостями для инференса
 - `mlflow` - сервис для отслеживания экспериментов
 - `streamlit` - веб-интерфейс
@@ -72,6 +73,7 @@ docker-compose up -d
 4. **Проверка работы**
 
 После запуска сервисы будут доступны по следующим адресам:
+
 - **FastAPI**: http://localhost:8000
 - **FastAPI Docs**: http://localhost:8000/docs
 - **MLflow**: http://localhost:8080
@@ -86,6 +88,7 @@ docker-compose up -d
 Подготовьте датасет в формате JSONL. Датасет должен содержать колонки с текстом и суммаризацией. Пример структуры:
 
 **JSONL формат:**
+
 ```json
 {"text": "Длинный текст статьи...", "summary": "Краткое резюме..."}
 {"text": "Другой текст...", "summary": "Другое резюме..."}
@@ -94,6 +97,7 @@ docker-compose up -d
 #### 2. Запуск обучения
 
 **Через Streamlit интерфейс:**
+
 1. Откройте http://localhost:8501
 2. Перейдите на вкладку "Обучение"
 3. Загрузите датасет и нажмите "Запустить обучение"
@@ -110,6 +114,7 @@ docker-compose up -d
 #### 4. Результаты обучения
 
 После завершения обучения модель сохраняется в:
+
 ```
 whisper_video_summarization/models/summarizer/checkpoints/best.ckpt
 ```
@@ -119,10 +124,10 @@ whisper_video_summarization/models/summarizer/checkpoints/best.ckpt
 ### Использование обученной модели
 
 **Эндпоинты FastAPI:**
+
 - `POST /infer` - суммаризация текста
 - `POST /infer/video` - транскрипция и суммаризация видео
 - `POST /train` - запуск обучения (фоновый режим)
-
 
 ### Структура проекта
 
@@ -149,10 +154,12 @@ whisper_video_summarization/
 ```
 
 ### Требования
+
 - Docker
 - Docker Compose
 
 ### Работа с данными в Docker
+
 При использовании Docker Compose данные и модели монтируются как volumes, поэтому изменения сохраняются между перезапусками:
 
 - `./data` - данные проекта

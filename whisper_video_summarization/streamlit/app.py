@@ -1,8 +1,9 @@
-import streamlit as st
-import requests
-import tempfile
 import os
 from pathlib import Path
+
+import requests
+import streamlit as st
+
 from whisper_video_summarization.utils.paths import get_paths
 
 API_URL = os.getenv("API_URL", "http://127.0.0.1:8000")
@@ -16,7 +17,7 @@ def inference_page():
     if uploaded_file:
         tmp_dir = Path("/app/tmp")
         tmp_dir.mkdir(parents=True, exist_ok=True)
-        
+
         video_path = tmp_dir / f"{uploaded_file.name}"
         with open(video_path, "wb") as f:
             f.write(uploaded_file.read())
@@ -25,9 +26,7 @@ def inference_page():
 
         if st.button("Запустить транскрибацию и суммаризацию"):
             response = requests.post(
-                f"{API_URL}/infer/video",
-                json={"path": str(video_path)},
-                timeout=600
+                f"{API_URL}/infer/video", json={"path": str(video_path)}, timeout=600
             )
 
             if response.status_code == 200:
@@ -46,9 +45,7 @@ def training_page():
     st.header("Обучение суммаризатора")
 
     dataset = st.file_uploader("Загрузите датасет (Gazeta)", type=["jsonl", "csv"])
-    config_path = st.text_input(
-        "Путь к конфигу hydra", "configs/train.yaml"
-    )
+    config_path = st.text_input("Путь к конфигу hydra", "configs/train.yaml")
 
     if st.button("Запустить обучение"):
         dataset_path = None

@@ -1,1 +1,1 @@
-#import whisper_video_summarization.patch
+# import whisper_video_summarization.patch

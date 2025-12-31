@@ -1,4 +1,5 @@
 from pathlib import Path
+
 from hydra import compose, initialize
 
 
@@ -13,4 +14,3 @@ def get_path(key: str) -> Path:
     """Get a specific path from config."""
     paths = get_paths()
     return Path(getattr(paths, key))
-
