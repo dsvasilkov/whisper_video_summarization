@@ -1,0 +1,7 @@
+stages:
+  train_summarizer:
+    cmd: python -m whisper_video_summarization.training.train
+    deps:
+      - configs
+    outs:
+      - whisper_video_summarization/models/summarizer/checkpoints/best.ckpt

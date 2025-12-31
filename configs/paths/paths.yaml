@@ -1,0 +1,4 @@
+whisper_model_dir: whisper_video_summarization/models/whisper
+summarizer_checkpoint_dir: whisper_video_summarization/models/summarizer/checkpoints
+summarizer_checkpoint_file: whisper_video_summarization/models/summarizer/checkpoints/best.ckpt
+gazeta_data_dir: whisper_video_summarization/data/gazeta

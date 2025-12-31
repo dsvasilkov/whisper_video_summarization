@@ -1,0 +1,11 @@
+defaults:
+  - model: t5
+  - data: gazeta
+  - logging: mlflow
+  - paths: paths
+  - _self_
+
+train:
+  batch_size: 2
+  epochs: 1
+  seed: 42
