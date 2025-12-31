@@ -11,12 +11,16 @@ def transcribe_video(video_path: Path, language: str = "ru") -> tuple[str, list[
     fp16 = device == "cuda"
 
     whisper_model_dir = get_whisper_model_dir()
-    model = whisper.load_model("base", download_root=str(whisper_model_dir), device=device)
+    model = whisper.load_model(
+        "base", download_root=str(whisper_model_dir), device=device
+    )
 
     video_path = Path(video_path)
     if not video_path.exists():
         raise FileNotFoundError(f"Video file not found: {video_path}")
 
-    result = model.transcribe(str(video_path), language=language, fp16=fp16, verbose=True)
+    result = model.transcribe(
+        str(video_path), language=language, fp16=fp16, verbose=True
+    )
 
     return result["text"]

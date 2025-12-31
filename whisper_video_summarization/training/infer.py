@@ -51,7 +51,9 @@ def infer(
                 do_sample=False,
             )
             summary = tokenizer.decode(
-                generated_ids[0], skip_special_tokens=True, clean_up_tokenization_spaces=True
+                generated_ids[0],
+                skip_special_tokens=True,
+                clean_up_tokenization_spaces=True,
             )
             summaries.append(summary)
     return summaries

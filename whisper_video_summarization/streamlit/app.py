@@ -12,7 +12,9 @@ API_URL = os.getenv("API_URL", "http://127.0.0.1:8000")
 def inference_page():
     st.header("Инференс видео")
 
-    uploaded_file = st.file_uploader("Загрузите файл", type=["mp4", "wav", "mp3", "mkv"])
+    uploaded_file = st.file_uploader(
+        "Загрузите файл", type=["mp4", "wav", "mp3", "mkv"]
+    )
 
     if uploaded_file:
         tmp_dir = Path("/app/tmp")

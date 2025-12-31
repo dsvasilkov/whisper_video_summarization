@@ -22,7 +22,9 @@ def train(cfg, dataset_path: str | None = None):
         else:
             df = pd.read_csv(dataset_path_obj)
 
-        train_df, val_df = train_test_split(df, test_size=0.1, random_state=cfg.train.seed)
+        train_df, val_df = train_test_split(
+            df, test_size=0.1, random_state=cfg.train.seed
+        )
 
         data_dir = Path(cfg.paths.gazeta_data_dir)
         data_dir.mkdir(parents=True, exist_ok=True)
