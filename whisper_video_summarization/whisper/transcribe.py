@@ -12,7 +12,7 @@ def transcribe_video(video_path: Path, language: str = "ru") -> tuple[str, list[
 
     whisper_model_dir = get_whisper_model_dir()
     model = whisper.load_model(
-        "base", download_root=str(whisper_model_dir), device=device
+        "large-v3", download_root=str(whisper_model_dir), device=device
     )
 
     video_path = Path(video_path)

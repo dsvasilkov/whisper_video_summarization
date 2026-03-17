@@ -1,0 +1,51 @@
+# Production: nginx (reverse proxy) + FastAPI (ASGI) + статика (frontend).
+# Запуск: docker-compose -f docker-compose.yml -f docker-compose.prod.yml up --build
+# Вход только через nginx на порту 80.
+
+services:
+  # Образ 1: Nginx reverse proxy — единственная точка входа (порт 80)
+  nginx:
+    build:
+      context: ./nginx
+      dockerfile: Dockerfile
+    container_name: whisper-nginx
+    ports:
+      - "80:80"
+    networks:
+      - whisper-network
+    depends_on:
+      fastapi:
+        condition: service_healthy
+      frontend:
+        condition: service_started
+
+  # Образ 2: Приложение (ASGI), без проброса портов на хост — доступ только через nginx
+  fastapi:
+    command: >
+      uvicorn whisper_video_summarization.api.app:app
+      --host 0.0.0.0
+      --port 8000
+      --workers 2
+      --log-level info
+    environment:
+      - PYTHONPATH=/app
+      - LOG_LEVEL=INFO
+      - DEBUG=0
+      - DATABASE_URL=postgresql+psycopg2://postgres:postgres@postgres:5432/whisper_inference
+      - CELERY_BROKER_URL=amqp://guest:guest@rabbitmq:5672//
+    expose:
+      - "8000"
+    ports: []
+
+  # Образ 3: Статика (React SPA), отдаётся через nginx по proxy
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: "/api"
+    container_name: whisper-frontend
+    expose:
+      - "80"
+    ports: []
+

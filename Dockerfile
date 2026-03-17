@@ -28,6 +28,7 @@ RUN poetry install \
     --with ${POETRY_GROUPS} \
     && rm -rf $POETRY_CACHE_DIR
 
+
 COPY . /app/
 
 EXPOSE 8000 8080 8501

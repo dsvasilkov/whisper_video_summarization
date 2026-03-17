@@ -8,8 +8,10 @@
 
 - **Whisper** - модель от OpenAI для транскрипции аудио и видео в текст
 - **T5** - модель для генерации суммаризаций текста на русском языке
-- **FastAPI** - REST API для взаимодействия с моделью
-- **Streamlit** - веб-интерфейс для загрузки видео и обучения модели
+- **FastAPI** - REST API (producer): постановка задач в очередь, получение статусов из БД
+- **Celery + RabbitMQ** - очередь задач: consumer обрабатывает инференс в воркерах
+- **PostgreSQL + SQLAlchemy** - хранение статусов и результатов задач инференса
+- **React + TypeScript** - веб-интерфейс (Vite) для загрузки видео и обучения модели
 - **MLflow** - отслеживание экспериментов и метрик обучения
 - **DVC** - управление версиями данных и моделей
 - **Hydra** - управление конфигурациями
@@ -20,7 +22,7 @@
 2. **Суммаризация текста**: Создание кратких резюме из транскрипций с помощью T5
 3. **Обучение модели**: Fine-tuning модели T5 на датасете Gazeta
 4. **Отслеживание экспериментов**: Логирование метрик и параметров через MLflow
-5. **Веб-интерфейс**: Удобный интерфейс для работы с системой через Streamlit
+5. **Веб-интерфейс**: Удобный интерфейс для работы с системой (React + TypeScript)
 
 ## Технические детали
 
@@ -48,11 +50,14 @@ cd whisper_video_summarization
 docker-compose build
 ```
 
-Это создаст три образа:
+Это создаст образы для сервисов:
 
-- `fastapi` - сервис с FastAPI и зависимостями для инференса
+- `fastapi` - API (producer): приём запросов, постановка задач в очередь, выдача статусов из БД
+- `celery_worker` - consumer: обработка задач инференса из RabbitMQ
+- `postgres` - БД для статусов задач (SQLAlchemy)
+- `rabbitmq` - брокер очереди для Celery
 - `mlflow` - сервис для отслеживания экспериментов
-- `streamlit` - веб-интерфейс
+- `frontend` - веб-интерфейс (React + TypeScript)
 
 3. **Запуск всех сервисов**
 
@@ -65,7 +70,27 @@ docker-compose up
 - **FastAPI**: http://localhost:8000
 - **FastAPI Docs**: http://localhost:8000/docs
 - **MLflow**: http://localhost:8080
-- **Streamlit**: http://localhost:8501
+- **Frontend (React)**: http://localhost:5173
+- **RabbitMQ Management**: http://localhost:15672 (guest/guest)
+- **PostgreSQL**: localhost:5432 (postgres/postgres, БД `whisper_inference`)
+
+#### Production: Nginx reverse proxy (три образа)
+
+Окружение для сервера: один вход через Nginx (порт 80), приложение в режиме Production (DEBUG=False), статика отдаётся отдельным образом.
+
+- **Образ 1 — Nginx**: reverse proxy, единственная точка входа на порт 80; проксирует `/api/` на приложение и `/` на статику.
+- **Образ 2 — Приложение**: FastAPI за uvicorn (ASGI) с `--workers 2`, без проброса портов наружу.
+- **Образ 3 — Статика**: собранный React (Vite), отдаётся по proxy со второго контейнера.
+
+Конфигурация Nginx: `nginx/nginx.conf` (и `nginx/Dockerfile`).
+
+Запуск production:
+
+```bash
+docker-compose -f docker-compose.yml -f docker-compose.prod.yml up --build
+```
+
+После запуска доступ только по **http://localhost** (порт 80): главная страница — статика, API — по префиксу `/api/` (например `/api/tasks`, `/api/infer/video/upload`).
 
 ### Train
 
@@ -84,7 +109,7 @@ docker-compose up
 
 #### 2. Запуск обучения
 
-**Через Streamlit интерфейс:**
+**Через веб-интерфейс (React):** откройте http://localhost:5173 → «Обучение», загрузите датасет и нажмите «Запустить обучение».
 
 **Ожидается успешный запуск обучения и снижение loss в процессе обучения.**
 
@@ -109,11 +134,18 @@ whisper_video_summarization/models/summarizer/checkpoints/best.ckpt
 
 ### Использование обученной модели
 
-**Эндпоинты FastAPI:**
+**Эндпоинты FastAPI (producer — не ждёт результата, возвращает `task_id`):**
 
-- `POST /infer` - суммаризация текста
-- `POST /infer/video` - транскрипция и суммаризация видео
+- `POST /infer` - поставить в очередь суммаризацию текста → `{ "task_id": "uuid" }`
+- `POST /infer/video` - поставить в очередь транскрипцию и суммаризацию по пути к файлу → `{ "task_id": "uuid" }`
+- `POST /infer/video/upload` - загрузить файл и поставить задачу в очередь → `{ "task_id": "uuid" }`
+- `POST /upload/dataset` - загрузка датасета для обучения
 - `POST /train` - запуск обучения (фоновый режим)
+
+**Получение статуса и результата из БД (опрашивает backend/клиент):**
+
+- `GET /tasks/{task_id}` - статус и результат задачи (pending / processing / completed / failed)
+- `GET /tasks?limit=50&offset=0` - список задач с пагинацией
 
 ### Структура проекта
 
@@ -131,8 +163,9 @@ whisper_video_summarization/
 │   ├── models/           # Модели (Whisper, T5)
 │   ├── training/         # Скрипты обучения
 │   ├── whisper/          # Модуль транскрипции
-│   ├── streamlit/        # Streamlit интерфейс
+│   ├── streamlit/        # (устарел) ранее Streamlit интерфейс
 │   └── utils/            # Утилиты
+├── frontend/             # React + TypeScript (Vite) интерфейс
 ├── data/                 # Данные проекта
 ├── dvc.yaml              # DVC pipeline
 ├── pyproject.toml        # Poetry конфигурация
@@ -155,6 +188,14 @@ whisper_video_summarization/
 - `./mlruns` - артефакты MLflow
 - `./tmp` - временные файлы (видео для обработки)
 
-## Пример работы приложения
+## Локальная разработка фронтенда
 
-![Пример работы Streamlit приложения](data/image.png)
+Без Docker, с проксированием запросов к API:
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Откройте http://localhost:5173. Запросы к `/api` будут проксироваться на http://127.0.0.1:8000 (запустите FastAPI отдельно).
