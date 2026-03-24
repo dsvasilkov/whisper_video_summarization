@@ -1,6 +1,7 @@
 FROM node:20-alpine AS builder
 WORKDIR /app
-ARG VITE_API_URL=http://localhost:8000
+# Пусто по умолчанию → в браузере будет /api (тот же хост). Для локального образа: --build-arg VITE_API_URL=http://localhost:8000/api
+ARG VITE_API_URL=
 ENV VITE_API_URL=$VITE_API_URL
 COPY package.json package-lock.json* ./
 RUN npm install

@@ -1,0 +1,6 @@
+# Не брать локальный .env в образ — иначе в сборку попадёт VITE_API_URL=localhost:8000
+.env
+.env.local
+.env.*.local
+node_modules
+dist

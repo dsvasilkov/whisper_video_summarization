@@ -1,0 +1,58 @@
+# Celery worker: CUDA 13 + cuDNN + PyTorch cu130 (Whisper на GPU).
+# Сборка: docker build -f Dockerfile.worker -t whisper-worker:latest .
+# См. docs/gpu-docker-host.md
+FROM nvidia/cuda:13.0.2-cudnn-runtime-ubuntu24.04
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    NVIDIA_VISIBLE_DEVICES=all \
+    NVIDIA_DRIVER_CAPABILITIES=compute,utility,video \
+    PIP_BREAK_SYSTEM_PACKAGES=1 \
+    PYTHONUNBUFFERED=1 \
+    POETRY_VERSION=1.8.3 \
+    POETRY_HOME=/opt/poetry \
+    POETRY_CACHE_DIR=/opt/poetry-cache \
+    POETRY_NO_INTERACTION=1 \
+    POETRY_HTTP_TIMEOUT=4000 \
+    PIP_DEFAULT_TIMEOUT=4000
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 \
+    python3-venv \
+    python3-dev \
+    python3-pip \
+    git \
+    build-essential \
+    ffmpeg \
+    curl \
+    netcat-openbsd \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
+    && ln -sf /usr/bin/python3 /usr/local/bin/python \
+    && ln -sf /usr/bin/python3 /usr/local/bin/python3
+
+RUN python3 -m pip install poetry==${POETRY_VERSION} \
+    && poetry config virtualenvs.create false
+
+ARG POETRY_GROUPS="inference,mlops"
+
+WORKDIR /app
+
+COPY pyproject.toml poetry.lock* ./
+
+RUN poetry config installer.max-workers 1 && \
+poetry install --no-ansi --no-root --only "main,${POETRY_GROUPS}"
+
+COPY . /app/
+
+RUN cd /app && git init \
+    && git config user.email "docker@local" \
+    && git config user.name "docker" \
+    && (git add -A && git commit -m "init" || true)
+
+ARG WHISPER_MODEL=large-v3
+ENV WHISPER_MODEL=${WHISPER_MODEL}
+RUN cd /app && python3 -m dvc repro whisper_model
+
+
+EXPOSE 8000 8080 8501
+CMD ["/bin/bash"]

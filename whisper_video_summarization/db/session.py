@@ -2,6 +2,7 @@ import os
 from contextlib import contextmanager
 
 from sqlalchemy import create_engine
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
 from whisper_video_summarization.db.models import Base
@@ -27,7 +28,10 @@ def get_session_factory():
 
 def init_db():
     engine = get_engine()
-    Base.metadata.create_all(bind=engine)
+    try:
+        Base.metadata.create_all(bind=engine, checkfirst=True)
+    except IntegrityError as e:
+        pass
 
 
 @contextmanager

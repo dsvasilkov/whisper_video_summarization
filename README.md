@@ -26,71 +26,71 @@
 
 ## Технические детали
 
-### Setup
+### Развёртывание (Docker и Kubernetes)
 
-Проект использует Docker Compose для управления окружением. Для настройки выполните следующие шаги:
+Основной способ запуска в продакшене — **Kubernetes**: PostgreSQL, RabbitMQ, API, Celery worker (GPU), опционально MLflow и frontend, Ingress. Docker Compose в репозитории **не используется**. Типичные манифесты лежат в каталоге **`k8s/`** (namespace `whisper`), если он есть в вашей ветке.
 
 #### Требования
 
-- Docker
-- Docker Compose
+- Kubernetes-кластер (в т.ч. minikube) с Ingress Controller
+- Docker (для сборки образов ниже)
+- Для GPU-воркера: драйвер NVIDIA на узлах и [NVIDIA Device Plugin / GPU Operator](https://docs.nvidia.com/datacenter/cloud-native/gpu-operator/overview.html); см. также `docs/gpu-docker-host.md`
 
-#### Шаги установки
+#### Образы: назначение и размер (ориентир)
 
-1. **Клонирование репозитория**
+| Тег образа | Файл | Назначение |
+|------------|------|------------|
+| **whisper-api** (~0.5–2 GB) | [`Dockerfile`](Dockerfile) | FastAPI: очередь, БД, DVC, **без** PyTorch/CUDA |
+| **whisper-worker** (~10–12 GB) | [`Dockerfile.worker`](Dockerfile.worker) | Celery + Whisper + PyTorch **cu130** (CUDA 13 runtime) |
+| **whisper-mlflow** (~0.3–0.7 GB) | [`Dockerfile.mlflow`](Dockerfile.mlflow) | только UI MLflow (sqlite + артефакты в томе) |
+| **whisper-frontend** | [`frontend/Dockerfile`](frontend/Dockerfile) | статика + nginx |
 
-```bash
-git clone <repository-url>
-cd whisper_video_summarization
-```
+Раньше один тяжёлый образ покрывал все сервисы (~12 GB даже для API/MLflow). Сейчас роли разделены; кратко см. также [`docs/docker-images.md`](docs/docker-images.md).
 
-2. **Сборка Docker образов**
+#### Что внутри каждого Dockerfile
 
-```bash
-docker-compose build
-```
+**[`Dockerfile`](Dockerfile) (API)** — база `python:3.12-slim-bookworm`, зависимости Poetry: **`main` + `mlops`** (`poetry install --only main --with mlops`). Старт: `uvicorn` на порту **8000**. Есть `ffmpeg` и инициализация git-репозитория в `/app` для DVC. PyTorch и CUDA **не** устанавливаются.
 
-Это создаст образы для сервисов:
+**[`Dockerfile.worker`](Dockerfile.worker) (инференс на GPU)** — база `nvidia/cuda:13.0.2-cudnn-runtime-ubuntu24.04`, переменные `NVIDIA_VISIBLE_DEVICES` / `NVIDIA_DRIVER_CAPABILITIES`. Poetry: **`main` + группы из `POETRY_GROUPS`** (по умолчанию **`inference,mlops`**: PyTorch с индекса `cu130`, Whisper, transformers, метрики и т.д.). При сборке выполняется **`dvc repro whisper_model`** — скачивается чекпоинт Whisper; модель задаётся build-arg **`WHISPER_MODEL`** (по умолчанию `large-v3`). **По умолчанию `CMD` — `/bin/bash`** — в Kubernetes или `docker run` нужно явно указать команду Celery worker (см. ниже). Порты в образе объявлены для совместимости с отладкой; рабочая нагрузка — очередь RabbitMQ.
 
-- `fastapi` - API (producer): приём запросов, постановка задач в очередь, выдача статусов из БД
-- `celery_worker` - consumer: обработка задач инференса из RabbitMQ
-- `postgres` - БД для статусов задач (SQLAlchemy)
-- `rabbitmq` - брокер очереди для Celery
-- `mlflow` - сервис для отслеживания экспериментов
-- `frontend` - веб-интерфейс (React + TypeScript)
+**[`Dockerfile.mlflow`](Dockerfile.mlflow)** — минимальный образ: только `mlflow` из PyPI, без PyTorch. Команда: **`mlflow server`** на порту **8080**, backend **sqlite** `sqlite:////app/mlflow.db`, артефакты в **`/app/mlruns`**. Для персистентности в k8s смонтируйте PVC на `/app` или отдельно на `mlflow.db` и `mlruns`.
 
-3. **Запуск всех сервисов**
+#### Сборка образов
 
 ```bash
-docker-compose up
+# пример: minikube — собирать в docker-демоне кластера
+eval $(minikube docker-env)
+docker build -t whisper-api:latest .
+docker build -f Dockerfile.worker -t whisper-worker:latest .
+docker build -f Dockerfile.mlflow -t whisper-mlflow:latest .
+docker build -t whisper-frontend:latest ./frontend
 ```
 
-После запуска сервисы будут доступны по следующим адресам:
+#### Kubernetes: типичная схема
 
-- **FastAPI**: http://localhost:8000
-- **FastAPI Docs**: http://localhost:8000/docs
-- **MLflow**: http://localhost:8080
-- **Frontend (React)**: http://localhost:5173
-- **RabbitMQ Management**: http://localhost:15672 (guest/guest)
-- **PostgreSQL**: localhost:5432 (postgres/postgres, БД `whisper_inference`)
-
-#### Production: Nginx reverse proxy (три образа)
-
-Окружение для сервера: один вход через Nginx (порт 80), приложение в режиме Production (DEBUG=False), статика отдаётся отдельным образом.
-
-- **Образ 1 — Nginx**: reverse proxy, единственная точка входа на порт 80; проксирует `/api/` на приложение и `/` на статику.
-- **Образ 2 — Приложение**: FastAPI за uvicorn (ASGI) с `--workers 2`, без проброса портов наружу.
-- **Образ 3 — Статика**: собранный React (Vite), отдаётся по proxy со второго контейнера.
-
-Конфигурация Nginx: `nginx/nginx.conf` (и `nginx/Dockerfile`).
-
-Запуск production:
+- **Namespace:** например `whisper`.
+- **Компоненты:** PostgreSQL, RabbitMQ, Deployment **API** (`whisper-api`), Deployment **Celery worker** (`whisper-worker`) с запросом **GPU**, опционально **MLflow** (`whisper-mlflow`) и **frontend**, **Ingress**.
+- **Переменные окружения (важно):**
+  - **`DATABASE_URL`** — строка SQLAlchemy для API и worker (одна и та же БД), например `postgresql+psycopg2://user:pass@postgres:5432/whisper_inference`.
+  - **`CELERY_BROKER_URL`** — брокер RabbitMQ, например `amqp://guest:guest@rabbitmq.whisper.svc.cluster.local:5672//` (подставьте имя сервиса из ваших манифестов).
+- **Тома:** общий PVC для загрузок (например **`whisper-uploads`**) с монтированием в **`/app/data`** и у API, и у worker, чтобы путь к файлу из API совпадал с путём в воркере.
+- **Worker:** в `resources.limits` укажите **`nvidia.com/gpu: 1`** (или по политике кластера). Команда контейнера должна запускать Celery, например:
 
 ```bash
-docker-compose -f docker-compose.yml -f docker-compose.prod.yml up --build
+celery -A whisper_video_summarization.celery_app.app:celery_app worker --loglevel=info
 ```
 
-После запуска доступ только по **http://localhost** (порт 80): главная страница — статика, API — по префиксу `/api/` (например `/api/tasks`, `/api/infer/video/upload`).
+- **Ingress:** фронтенд на корне, API за префиксом **`/api`** (как в nginx фронта).
+
+```bash
+kubectl apply -f k8s/
+```
+
+**Обучение через `POST /train` в лёгком API:** в образе API нет PyTorch — фоновое обучение из этого контейнера не выполнится. Обучайте с хоста (`poetry install --with inference,mlflow`) или вынесите задачу в отдельный Job/воркер с полным стеком (`Dockerfile.worker` или отдельный train-образ).
+
+Доступ к UI настраивается через Ingress (пример хоста `whisper.local` в `k8s/ingress.yaml`, если файл есть в репозитории).
+
+Отдельные конфиги Nginx без Ingress: каталог **`nginx/`** (если присутствует).
 
 ### Train
 
@@ -109,7 +109,7 @@ docker-compose -f docker-compose.yml -f docker-compose.prod.yml up --build
 
 #### 2. Запуск обучения
 
-**Через веб-интерфейс (React):** откройте http://localhost:5173 → «Обучение», загрузите датасет и нажмите «Запустить обучение».
+**Через веб-интерфейс (React):** откройте URL фронта (локально `npm run dev` → http://localhost:5173, в кластере — хост из Ingress) → «Обучение», загрузите датасет и нажмите «Запустить обучение».
 
 **Ожидается успешный запуск обучения и снижение loss в процессе обучения.**
 
@@ -130,7 +130,7 @@ docker-compose -f docker-compose.yml -f docker-compose.prod.yml up --build
 whisper_video_summarization/models/summarizer/checkpoints/best.ckpt
 ```
 
-Эта модель используется для инференса. При использовании Docker данные сохраняются в volume, поэтому модель будет доступна после перезапуска контейнеров.
+Эта модель используется для инференса. В Kubernetes модели и данные хранятся в томах/PVC или в образе — настройте монтирование под ваш сценарий.
 
 ### Использование обученной модели
 
@@ -167,6 +167,10 @@ whisper_video_summarization/
 │   └── utils/            # Утилиты
 ├── frontend/             # React + TypeScript (Vite) интерфейс
 ├── data/                 # Данные проекта
+├── Dockerfile            # образ API (FastAPI, без PyTorch)
+├── Dockerfile.worker     # образ Celery + Whisper/GPU
+├── Dockerfile.mlflow     # образ MLflow UI
+├── k8s/                  # Kubernetes: Postgres, RabbitMQ, API, worker, frontend, ingress
 ├── dvc.yaml              # DVC pipeline
 ├── pyproject.toml        # Poetry конфигурация
 └── README.md
@@ -174,19 +178,12 @@ whisper_video_summarization/
 
 ### Требования
 
-- Docker
-- Docker Compose
+- **Kubernetes** (или локальная разработка без кластера: Poetry + `npm run dev` для фронта)
+- **Docker** — для сборки образов приложения
 
-### Работа с данными в Docker
+### Данные и тома
 
-При использовании Docker Compose данные и модели монтируются как volumes, поэтому изменения сохраняются между перезапусками:
-
-- `./data` - данные проекта (включая `test_train.jsonl`)
-- `./whisper_video_summarization/models` - модели
-- `./configs` - конфигурационные файлы
-- `./mlflow.db` - база данных MLflow
-- `./mlruns` - артефакты MLflow
-- `./tmp` - временные файлы (видео для обработки)
+В Kubernetes загрузки API и воркера должны смотреть на один и тот же путь (часто PVC **`whisper-uploads`**, mount в **`/app/data`** у обоих Deployment). Имена манифестов в **`k8s/`** могут отличаться — сверьтесь с вашей веткой. Локально: каталоги `data/`, `configs/`, при необходимости MLflow (`mlruns/`, `mlflow.db`).
 
 ## Локальная разработка фронтенда
 

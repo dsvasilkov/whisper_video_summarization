@@ -33,12 +33,12 @@ class InferenceTask(Base):
         default=uuid.uuid4,
     )
     status: Mapped[TaskStatus] = mapped_column(
-        Enum(TaskStatus),
+        Enum(TaskStatus, name="taskstatus", create_type=False),
         default=TaskStatus.PENDING,
         nullable=False,
     )
     task_type: Mapped[TaskType] = mapped_column(
-        Enum(TaskType),
+        Enum(TaskType, name="tasktype", create_type=False),
         nullable=False,
     )
     input_path: Mapped[str | None] = mapped_column(String(2048), nullable=True)

@@ -7,11 +7,9 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from whisper_video_summarization.api.infer import run_infer
 from whisper_video_summarization.celery_app.app import celery_app
 from whisper_video_summarization.db.models import TaskStatus, TaskType, InferenceTask
 from whisper_video_summarization.db.session import get_session_factory
-from whisper_video_summarization.whisper.transcribe import transcribe_video
 
 logger = logging.getLogger("celery.tasks")
 
@@ -40,6 +38,8 @@ def _update_task_status(
 
 @celery_app.task(bind=True, name="inference.run_text")
 def run_infer_text_task(self, task_id: str, text: str):
+    from whisper_video_summarization.api.infer import run_infer
+
     task_uuid = UUID(task_id)
     SessionLocal = get_session_factory()
     session = SessionLocal()
@@ -61,11 +61,15 @@ def run_infer_text_task(self, task_id: str, text: str):
             TaskStatus.FAILED,
             error_message=str(e),
         )
+        raise
     finally:
         session.close()
 
 
 def _do_video_inference(session: Session, task_uuid: UUID, task_id: str, video_path: str):
+    from whisper_video_summarization.api.infer import run_infer
+    from whisper_video_summarization.whisper.transcribe import transcribe_video
+
     path = Path(video_path)
     if not path.is_absolute():
         path = Path("/app") / path
@@ -97,6 +101,7 @@ def run_infer_video_task(self, task_id: str, video_path: str):
             TaskStatus.FAILED,
             error_message=str(e),
         )
+        raise
     finally:
         session.close()
 
@@ -116,5 +121,6 @@ def run_infer_video_upload_task(self, task_id: str, video_path: str):
             TaskStatus.FAILED,
             error_message=str(e),
         )
+        raise
     finally:
         session.close()

@@ -1,4 +1,11 @@
 stages:
+  whisper_model:
+    cmd: python -c "import os, whisper; m=os.environ.get('WHISPER_MODEL','large-v3'); r='whisper_video_summarization/models/whisper'; os.makedirs(r, exist_ok=True); whisper._download(whisper._MODELS[m], r, False)"
+    deps:
+      - configs/paths/paths.yaml
+    outs:
+      - whisper_video_summarization/models/whisper
+
   train_summarizer:
     cmd: python -m whisper_video_summarization.training.train
     deps:

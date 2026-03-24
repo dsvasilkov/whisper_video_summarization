@@ -1,4 +1,8 @@
-const API_BASE = (import.meta.env.VITE_API_URL as string) || '/api';
+// Относительный /api — когда фронт и API на одном хосте (nginx/ingress). Иначе задайте VITE_API_URL (например http://localhost:8000/api).
+const _raw = (import.meta.env.VITE_API_URL as string) || '';
+const API_BASE = _raw
+  ? (_raw.endsWith('/api') ? _raw.replace(/\/+$/, '') : _raw.replace(/\/+$/, '') + '/api')
+  : '/api';
 
 export interface TaskStatusResponse {
   task_id: string;

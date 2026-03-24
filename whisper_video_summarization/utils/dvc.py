@@ -1,7 +1,11 @@
+import logging
+import os
 import subprocess
 from pathlib import Path
 
 from whisper_video_summarization.utils.paths import get_paths
+
+logger = logging.getLogger(__name__)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
@@ -52,3 +56,29 @@ def dvc_pull():
 
 def dvc_repro(stage: str):
     return run_dvc(["repro", stage])
+
+
+def track_path_in_dvc(path: Path, push: bool = False) -> bool:
+    """
+    Регистрирует файл или каталог в DVC (путь должен быть внутри PROJECT_ROOT).
+    Нужен инициализированный git-репозиторий в корне проекта.
+    """
+    try:
+        path = path.resolve()
+        rel = path.relative_to(PROJECT_ROOT.resolve())
+    except ValueError:
+        logger.warning("DVC: путь %s вне PROJECT_ROOT, пропуск", path)
+        return False
+    if not path.exists():
+        logger.warning("DVC: файл не найден: %s", path)
+        return False
+    git_dir = PROJECT_ROOT / ".git"
+    if not git_dir.exists():
+        logger.warning("DVC: нет каталога .git в %s — dvc add пропущен", PROJECT_ROOT)
+        return False
+    out = run_dvc(["add", str(rel)], check=False)
+    if out:
+        logger.debug("dvc add: %s", out.strip()[:500])
+    if push or os.getenv("DVC_PUSH_UPLOADS", "").lower() in ("1", "true", "yes"):
+        run_dvc(["push", str(rel)], check=False)
+    return True

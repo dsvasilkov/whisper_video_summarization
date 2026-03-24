@@ -1,7 +1,8 @@
 import logging
 import os
+import re
 from pathlib import Path
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi import BackgroundTasks, Depends, File, FastAPI, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -22,37 +23,35 @@ from whisper_video_summarization.celery_app.tasks import (
     run_infer_video_upload_task,
 )
 from whisper_video_summarization.db.models import InferenceTask, TaskStatus, TaskType
-from whisper_video_summarization.utils.dvc import add_whisper_to_dvc, dvc_pull
+from whisper_video_summarization.utils.dvc import add_whisper_to_dvc, dvc_pull, track_path_in_dvc
 
 DEBUG = os.getenv("DEBUG", "0").lower() in ("1", "true", "yes")
 
-app = FastAPI(title="Whisper Video Summarization", debug=DEBUG)
+# Общий том k8s/docker: ./data → /app/data; загрузки попадают в DVC (track_path_in_dvc)
+UPLOAD_VIDEO_DIR = Path(os.getenv("UPLOAD_VIDEO_DIR", "/app/data/uploads"))
+UPLOAD_DATASET_DIR = Path(os.getenv("UPLOAD_DATASET_DIR", "/app/data/datasets"))
+
 logger = logging.getLogger("app")
 
-# CORS: в production за nginx достаточно своего origin; в DEBUG — локальные адреса
-_cors_origins = (
-    ["*"] if DEBUG
-    else ["http://localhost", "http://127.0.0.1", "https://localhost", "https://127.0.0.1"]
-)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=_cors_origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+
+def _safe_upload_name(original: str | None) -> str:
+    stem = Path(original or "upload").stem
+    suffix = Path(original or "").suffix or ".bin"
+    safe = re.sub(r"[^\w\-_.]", "_", stem)[:120]
+    return f"{uuid4().hex}_{safe}{suffix}"
 
 
-@app.on_event("startup")
-def startup():
-    """Pull models, data, and configs from DVC; создаём таблицы БД."""
-    add_whisper_to_dvc()
-    dvc_pull()
-    from whisper_video_summarization.db import init_db
-    init_db()
+def _dvc_track_upload(path_str: str) -> None:
+    try:
+        track_path_in_dvc(Path(path_str))
+    except Exception:
+        logger.exception("DVC track failed for %s", path_str)
+
+# Подприложение с роутами без префикса; при монтировании на /api пути станут /api/train, /api/infer/...
+api_app = FastAPI(title="Whisper Video Summarization API", debug=DEBUG)
 
 
-@app.post("/train")
+@api_app.post("/train")
 def train(request: TrainRequest, background_tasks: BackgroundTasks):
     background_tasks.add_task(run_training, request.config_path, request.dataset_path)
     return {"status": "training started"}
@@ -60,7 +59,7 @@ def train(request: TrainRequest, background_tasks: BackgroundTasks):
 
 # ---------- Producer: постановка задач инференса в очередь ----------
 
-@app.post("/infer", response_model=TaskCreateResponse)
+@api_app.post("/infer", response_model=TaskCreateResponse)
 def infer_text(request: InferRequest, db: Session = Depends(get_db)):
     """Поставить в очередь задачу суммаризации текста. Результат — через GET /tasks/{task_id}."""
     task = InferenceTask(
@@ -75,7 +74,7 @@ def infer_text(request: InferRequest, db: Session = Depends(get_db)):
     return TaskCreateResponse(task_id=task.id)
 
 
-@app.post("/infer/video", response_model=TaskCreateResponse)
+@api_app.post("/infer/video", response_model=TaskCreateResponse)
 def infer_video(request: InferVideoRequest, db: Session = Depends(get_db)):
     """Поставить в очередь задачу транскрипции и суммаризации по пути к файлу."""
     video_path = Path(request.path)
@@ -95,15 +94,19 @@ def infer_video(request: InferVideoRequest, db: Session = Depends(get_db)):
     return TaskCreateResponse(task_id=task.id)
 
 
-@app.post("/infer/video/upload", response_model=TaskCreateResponse)
-async def infer_video_upload(file: UploadFile = File(...), db: Session = Depends(get_db)):
+@api_app.post("/infer/video/upload", response_model=TaskCreateResponse)
+async def infer_video_upload(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+):
     """Загрузить файл, поставить в очередь задачу транскрипции и суммаризации."""
-    tmp_dir = Path("/app/tmp")
-    tmp_dir.mkdir(parents=True, exist_ok=True)
-    path = tmp_dir / (file.filename or "upload")
+    UPLOAD_VIDEO_DIR.mkdir(parents=True, exist_ok=True)
+    path = UPLOAD_VIDEO_DIR / _safe_upload_name(file.filename)
     content = await file.read()
     path.write_bytes(content)
     logger.info("Uploaded file saved: %s", path)
+    background_tasks.add_task(_dvc_track_upload, str(path))
     task = InferenceTask(
         status=TaskStatus.PENDING,
         task_type=TaskType.VIDEO_UPLOAD,
@@ -118,7 +121,7 @@ async def infer_video_upload(file: UploadFile = File(...), db: Session = Depends
 
 # ---------- Роуты статусов из БД (backend опрашивает сам) ----------
 
-@app.get("/tasks/{task_id}", response_model=TaskStatusResponse)
+@api_app.get("/tasks/{task_id}", response_model=TaskStatusResponse)
 def get_task(task_id: UUID, db: Session = Depends(get_db)):
     """Получить статус и результат задачи по ID."""
     task = db.query(InferenceTask).filter(InferenceTask.id == task_id).first()
@@ -136,7 +139,7 @@ def get_task(task_id: UUID, db: Session = Depends(get_db)):
     )
 
 
-@app.get("/tasks", response_model=list[TaskStatusResponse])
+@api_app.get("/tasks", response_model=list[TaskStatusResponse])
 def list_tasks(
     db: Session = Depends(get_db),
     limit: int = 50,
@@ -165,12 +168,55 @@ def list_tasks(
     ]
 
 
-@app.post("/upload/dataset")
-async def upload_dataset(file: UploadFile = File(...)):
+@api_app.post("/upload/dataset")
+async def upload_dataset(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+):
     """Сохраняет загруженный датасет (Gazeta) и возвращает путь для POST /train."""
-    tmp_dir = Path("/app/tmp/datasets")
-    tmp_dir.mkdir(parents=True, exist_ok=True)
-    path = tmp_dir / (file.filename or "dataset.jsonl")
+    UPLOAD_DATASET_DIR.mkdir(parents=True, exist_ok=True)
+    path = UPLOAD_DATASET_DIR / _safe_upload_name(file.filename or "dataset.jsonl")
     content = await file.read()
     path.write_bytes(content)
+    background_tasks.add_task(_dvc_track_upload, str(path))
     return {"path": str(path)}
+
+
+# ---------- Главное приложение: CORS, startup, монтирование API под /api ----------
+
+def _startup():
+    """Pull models, data, and configs from DVC; создаём таблицы БД."""
+    add_whisper_to_dvc()
+    dvc_pull()
+    from whisper_video_summarization.db import init_db
+    init_db()
+
+
+_cors_origins = (
+    ["*"] if DEBUG
+    else [
+        "http://localhost",
+        "http://127.0.0.1",
+        "https://localhost",
+        "https://127.0.0.1",
+        "http://localhost:5173",
+        "http://localhost:3000",
+        "http://whisper.local",
+        "https://whisper.local",
+        "http://whisper.local/",
+        "https://whisper.local/",
+    ]
+)
+
+app = FastAPI(title="Whisper Video Summarization", debug=DEBUG)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_cors_origins,
+    allow_origin_regex=r"^https?://(localhost(:\d+)?|127\.0\.0\.1(:\d+)?|whisper\.local)/?$",
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+    expose_headers=["*"],
+)
+app.on_event("startup")(_startup)
+app.mount("/api", api_app)
