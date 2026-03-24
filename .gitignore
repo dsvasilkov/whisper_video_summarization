@@ -51,4 +51,3 @@ mlflow.db
 
 .env
 .env.local
-k8s/

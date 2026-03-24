@@ -1,0 +1,55 @@
+# Воркер Celery с одной GPU (nvidia.com/gpu: 1). Требуется NVIDIA Device Plugin в кластере.
+# Без GPU планировщик не разместит под; для CPU-only уберите nvidia.com/gpu из requests/limits.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: whisper-celery-worker
+  namespace: whisper
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: whisper-celery-worker
+  template:
+    metadata:
+      labels:
+        app: whisper-celery-worker
+    spec:
+      containers:
+        - name: worker
+          image: whisper-worker:latest
+          imagePullPolicy: IfNotPresent
+          volumeMounts:
+            - name: uploads
+              mountPath: /app/data
+          command:
+            - celery
+            - -A
+            - whisper_video_summarization.celery_app.app
+            - worker
+            - -l
+            - info
+            - --concurrency=1
+          resources:
+            requests:
+              memory: "8Gi"
+              cpu: "2"
+              nvidia.com/gpu: 1
+            limits:
+              memory: "16Gi"
+              cpu: "4"
+              nvidia.com/gpu: 1
+          env:
+            - name: PYTHONPATH
+              value: /app
+            - name: DATABASE_URL
+              value: postgresql+psycopg2://postgres:postgres@postgres.whisper.svc.cluster.local:5432/whisper_inference
+            - name: CELERY_BROKER_URL
+              value: amqp://guest:guest@rabbitmq.whisper.svc.cluster.local:5672//
+            - name: WHISPER_GPU_MEMORY_FRACTION
+              value: "0.95"
+      volumes:
+        - name: uploads
+          persistentVolumeClaim:
+            claimName: whisper-uploads
+

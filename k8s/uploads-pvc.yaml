@@ -1,0 +1,13 @@
+# Общее хранилище: монтируется в /app/data (uploads/, datasets/) — API и worker видят одни и те же файлы.
+# ReadWriteOnce: оба пода (API и worker) должны быть на одном узле (в minikube так и есть).
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: whisper-uploads
+  namespace: whisper
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi

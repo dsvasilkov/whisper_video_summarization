@@ -1,0 +1,63 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: whisper-api
+  namespace: whisper
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: whisper-api
+  template:
+    metadata:
+      labels:
+        app: whisper-api
+    spec:
+      containers:
+        - name: api
+          image: whisper-api:latest
+          imagePullPolicy: IfNotPresent
+          volumeMounts:
+            - name: uploads
+              mountPath: /app/data
+          command:
+            - uvicorn
+            - whisper_video_summarization.api.app:app
+            - --host
+            - 0.0.0.0
+            - --port
+            - "8000"
+            - --workers
+            - "2"
+            - --log-level
+            - info
+          env:
+            - name: PYTHONPATH
+              value: /app
+            - name: LOG_LEVEL
+              value: INFO
+            - name: DEBUG
+              value: "0"
+            - name: DATABASE_URL
+              value: postgresql+psycopg2://postgres:postgres@postgres.whisper.svc.cluster.local:5432/whisper_inference
+            - name: CELERY_BROKER_URL
+              value: amqp://guest:guest@rabbitmq.whisper.svc.cluster.local:5672//
+          ports:
+            - containerPort: 8000
+      volumes:
+        - name: uploads
+          persistentVolumeClaim:
+            claimName: whisper-uploads
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: whisper-api
+  namespace: whisper
+spec:
+  selector:
+    app: whisper-api
+  ports:
+    - port: 8000
+      targetPort: 8000
+
