@@ -30,10 +30,11 @@ data/uploads/*
 !data/uploads/.gitkeep
 data/datasets/*
 !data/datasets/.gitkeep
-whisper_video_summarization/data/
+
+whisper_video_summarization/data/*
 !whisper_video_summarization/data/gazeta_dataset.py
+whisper_video_summarization/models/*
 !whisper_video_summarization/models/summarizer.py
-whisper_video_summarization/models/
 *.ckpt
 *.pt
 *.bin
