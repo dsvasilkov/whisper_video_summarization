@@ -8,6 +8,11 @@ from whisper_video_summarization.utils.paths import get_paths
 logger = logging.getLogger(__name__)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
+VLLM_MODEL_PATHS: dict[str, str] = {
+    "openai/whisper-large-v3": "vllm_whisper_model_dir",
+    "unsloth/Qwen3.5-9B-GGUF (Q8 GGUF)": "vllm_qwen_model_dir",
+    "Qwen/Qwen3.5-9B (tokenizer+config)": "vllm_qwen_hf_tokenizer_dir",
+}
 
 
 def get_whisper_model_dir() -> Path:
@@ -15,15 +20,29 @@ def get_whisper_model_dir() -> Path:
     return PROJECT_ROOT / paths.whisper_model_dir
 
 
+def get_vllm_model_dirs() -> list[Path]:
+    paths = get_paths()
+    dirs: list[Path] = []
+    for key in VLLM_MODEL_PATHS.values():
+        value = getattr(paths, key, None)
+        if value:
+            dirs.append(PROJECT_ROOT / value)
+    return dirs
+
+
 def run_dvc(cmd: list[str], check: bool = True) -> str:
-    result = subprocess.run(
-        ["dvc", *cmd],
-        cwd=PROJECT_ROOT,
-        capture_output=True,
-        text=True,
-        check=check,
-    )
-    return result.stdout
+    try:
+        result = subprocess.run(
+            ["dvc", *cmd],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+            check=check,
+        )
+        return result.stdout
+    except FileNotFoundError:
+        logger.warning("DVC binary is not installed; skipping: dvc %s", " ".join(cmd))
+        return ""
 
 
 def add_whisper_to_dvc():
@@ -48,6 +67,30 @@ def add_whisper_to_dvc():
         run_dvc(["add", whisper_relative], check=False)
     except Exception:
         pass
+
+
+def add_vllm_models_to_dvc():
+    for model_dir in get_vllm_model_dirs():
+        if not model_dir.exists():
+            continue
+
+        files = [
+            f
+            for f in model_dir.iterdir()
+            if not f.name.startswith(".") and not f.name.startswith("__")
+        ]
+        if not files:
+            continue
+
+        model_relative = str(model_dir.relative_to(PROJECT_ROOT))
+        dvc_file = PROJECT_ROOT / f"{model_relative}.dvc"
+        if dvc_file.exists():
+            continue
+
+        try:
+            run_dvc(["add", model_relative], check=False)
+        except Exception:
+            pass
 
 
 def dvc_pull():

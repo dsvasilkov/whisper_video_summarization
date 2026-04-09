@@ -1,0 +1,129 @@
+# Один файл: ConfigMap плагина + Job, который патчит nvidia-device-plugin-daemonset.
+# Нужны: namespace whisper, addon nvidia-device-plugin (или gpu).
+# Применение: kubectl apply -f k8s/namespace.yaml -f k8s/nvidia-time-slicing-apply.yaml
+# Повторный прогон: kubectl delete job -n whisper nvidia-time-slicing-apply --ignore-not-found && kubectl apply -f k8s/nvidia-time-slicing-apply.yaml
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nvidia-device-plugin-config
+  namespace: kube-system
+data:
+  config.yaml: |
+    version: v1
+    sharing:
+      timeSlicing:
+        resources:
+          - name: nvidia.com/gpu
+            replicas: 8
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: nvidia-time-slicing-apply
+  namespace: whisper
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: nvidia-time-slicing-apply
+  namespace: kube-system
+rules:
+  - apiGroups: ["apps"]
+    resources: ["daemonsets"]
+    resourceNames: ["nvidia-device-plugin-daemonset"]
+    verbs: ["get", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: nvidia-time-slicing-apply
+  namespace: kube-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: nvidia-time-slicing-apply
+subjects:
+  - kind: ServiceAccount
+    name: nvidia-time-slicing-apply
+    namespace: whisper
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nvidia-device-plugin-ds-patch
+  namespace: whisper
+data:
+  patch.yaml: |
+    spec:
+      template:
+        spec:
+          volumes:
+            - name: nvidia-plugin-config
+              configMap:
+                name: nvidia-device-plugin-config
+            - name: device-plugin
+              hostPath:
+                path: /var/lib/kubelet/device-plugins
+          containers:
+            - name: nvidia-device-plugin-ctr
+              image: nvcr.io/nvidia/k8s-device-plugin:v0.18.2
+              args:
+                - --config-file=/config/config.yaml
+              volumeMounts:
+                - name: nvidia-plugin-config
+                  mountPath: /config
+                  readOnly: true
+                - name: device-plugin
+                  mountPath: /var/lib/kubelet/device-plugins
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: nvidia-time-slicing-apply
+  namespace: whisper
+spec:
+  ttlSecondsAfterFinished: 300
+  backoffLimit: 2
+  activeDeadlineSeconds: 300
+  template:
+    spec:
+      serviceAccountName: nvidia-time-slicing-apply
+      restartPolicy: OnFailure
+      containers:
+        - name: apply
+          image: docker.io/alpine/k8s:1.31.2
+          volumeMounts:
+            - name: patch
+              mountPath: /patch
+              readOnly: true
+          command:
+            - /bin/bash
+            - -c
+            - |
+              set -euo pipefail
+              for i in $(seq 1 60); do
+                kubectl -n kube-system get cm nvidia-device-plugin-config -o name >/dev/null 2>&1 && break
+                sleep 1
+              done
+              kubectl -n kube-system get ds nvidia-device-plugin-daemonset -o name >/dev/null
+              kubectl -n kube-system patch daemonset nvidia-device-plugin-daemonset \
+                --type=strategic \
+                --patch-file=/patch/patch.yaml
+              # rollout status требует list/watch — с resourceNames в Role недоступно; ждём по get
+              for j in $(seq 1 90); do
+                d=$(kubectl -n kube-system get ds nvidia-device-plugin-daemonset -o jsonpath='{.status.desiredNumberScheduled}')
+                u=$(kubectl -n kube-system get ds nvidia-device-plugin-daemonset -o jsonpath='{.status.updatedNumberScheduled}')
+                r=$(kubectl -n kube-system get ds nvidia-device-plugin-daemonset -o jsonpath='{.status.numberReady}')
+                if [ -n "$d" ] && [ "$d" = "$u" ] && [ "$d" = "$r" ] && [ "$d" != "0" ]; then
+                  echo "nvidia-device-plugin-daemonset: ${r}/${d} ready"
+                  exit 0
+                fi
+                sleep 2
+              done
+              echo "timeout waiting for daemonset" >&2
+              exit 1
+      volumes:
+        - name: patch
+          configMap:
+            name: nvidia-device-plugin-ds-patch

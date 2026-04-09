@@ -27,10 +27,8 @@ Thumbs.db
 .dvc/cache/
 .dvc/tmp/
 
-whisper_video_summarization/data/
-!whisper_video_summarization/data/gazeta_dataset.py
 whisper_video_summarization/models/
-!whisper_video_summarization/models/summarizer.py
+data/models/
 *.ckpt
 *.pt
 *.bin

@@ -1,0 +1,5 @@
+defaults:
+  - model: qwen
+  - paths: paths
+  - _self_
+

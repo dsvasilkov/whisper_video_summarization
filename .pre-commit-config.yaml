@@ -25,4 +25,4 @@ repos:
     hooks:
       - id: prettier
         types_or: [yaml, markdown, json]
-        exclude: ^(poetry.lock|package-lock.json|yarn.lock)
+        exclude: ^(poetry.lock|uv.lock|package-lock.json|yarn.lock)

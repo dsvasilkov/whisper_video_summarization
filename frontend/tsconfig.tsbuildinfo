@@ -1,0 +1,1 @@
+{"root":["./src/App.tsx","./src/AuthContext.tsx","./src/ForgotPasswordPage.tsx","./src/HistoryPage.tsx","./src/InferencePage.tsx","./src/LoginPage.tsx","./src/RegisterPage.tsx","./src/ResetPasswordPage.tsx","./src/TranscriptViewer.tsx","./src/api.ts","./src/audio.ts","./src/main.tsx","./src/vite-env.d.ts"],"version":"5.6.3"}

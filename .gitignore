@@ -25,16 +25,17 @@ Thumbs.db
 .dvc/cache/
 .dvc/tmp/
 
-data/gazeta
 data/uploads/*
 !data/uploads/.gitkeep
 data/datasets/*
 !data/datasets/.gitkeep
 
-whisper_video_summarization/data/*
-!whisper_video_summarization/data/gazeta_dataset.py
+# vLLM / HF веса (версионируются через DVC: *.dvc в репозитории)
+data/models/vllm/openai__whisper-large-v3/
+data/models/vllm/unsloth__Qwen3.5-9B-GGUF/
+data/models/vllm/Qwen__Qwen3.5-9B/
+
 whisper_video_summarization/models/*
-!whisper_video_summarization/models/summarizer.py
 *.ckpt
 *.pt
 *.bin

@@ -1,12 +1,27 @@
-import { useState } from 'react'
+import type { ReactNode } from 'react'
+import { Navigate, Outlet, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { InferencePage } from './InferencePage'
-import { TrainingPage } from './TrainingPage'
+import { ForgotPasswordPage } from './ForgotPasswordPage'
+import { HistoryPage } from './HistoryPage'
+import { LoginPage } from './LoginPage'
+import { RegisterPage } from './RegisterPage'
+import { ResetPasswordPage } from './ResetPasswordPage'
+import { useAuth } from './AuthContext'
 import './App.css'
 
-type Mode = 'inference' | 'training'
+function ProtectedRoute({ children }: { children: ReactNode }) {
+  const { token } = useAuth()
+  const loc = useLocation()
+  if (!token) {
+    return <Navigate to="/login" replace state={{ from: loc.pathname }} />
+  }
+  return <>{children}</>
+}
 
-function App() {
-  const [mode, setMode] = useState<Mode>('inference')
+function MainLayout() {
+  const { logout } = useAuth()
+  const navigate = useNavigate()
+  const loc = useLocation()
 
   return (
     <div className="app">
@@ -15,25 +30,48 @@ function App() {
         <nav className="nav">
           <button
             type="button"
-            className={mode === 'inference' ? 'active' : ''}
-            onClick={() => setMode('inference')}
+            className={loc.pathname === '/' ? 'active' : ''}
+            onClick={() => navigate('/')}
           >
-            Инференс видео
+            Инференс
           </button>
           <button
             type="button"
-            className={mode === 'training' ? 'active' : ''}
-            onClick={() => setMode('training')}
+            className={loc.pathname === '/history' ? 'active' : ''}
+            onClick={() => navigate('/history')}
           >
-            Обучение
+            История
+          </button>
+          <button type="button" className="nav-ghost" onClick={() => logout()}>
+            Выйти
           </button>
         </nav>
       </header>
       <main className="main">
-        {mode === 'inference' ? <InferencePage /> : <TrainingPage />}
+        <Outlet />
       </main>
     </div>
   )
 }
 
-export default App
+export default function App() {
+  return (
+    <Routes>
+      <Route path="/login" element={<LoginPage />} />
+      <Route path="/register" element={<RegisterPage />} />
+      <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+      <Route path="/reset-password" element={<ResetPasswordPage />} />
+      <Route
+        element={
+          <ProtectedRoute>
+            <MainLayout />
+          </ProtectedRoute>
+        }
+      >
+        <Route path="/" element={<InferencePage />} />
+        <Route path="/history" element={<HistoryPage />} />
+      </Route>
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
+  )
+}

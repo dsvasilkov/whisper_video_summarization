@@ -1,21 +1,23 @@
 from pathlib import Path
+from typing import Any
 
-import torch
 from hydra import compose, initialize
 
-from whisper_video_summarization.training.infer import infer
+from whisper_video_summarization.llm.infer import infer
 
 
-def run_infer(text: str) -> str:
+async def run_infer(transcription_json: dict[str, Any]) -> str:
     with initialize(config_path="../../configs", version_base=None):
-        cfg = compose(config_name="train")
+        cfg = compose(config_name="infer")
 
     model_path = Path(cfg.paths.summarizer_checkpoint_file)
-    summaries = infer(
+    summaries = await infer(
         model_checkpoint=model_path,
-        texts=[text],
+        texts=[transcription_json],
         model_name=cfg.model.name,
+        model_type=getattr(cfg.model, "type", "qwen"),
         max_length=16384,
-        device="cuda" if torch.cuda.is_available() else "cpu",
+        device="cuda",
+        max_new_tokens=getattr(cfg.model, "max_new_tokens", None),
     )
     return summaries[0]

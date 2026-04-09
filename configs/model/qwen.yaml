@@ -1,0 +1,6 @@
+type: qwen
+name: "Qwen/Qwen3.5-0.8B"
+
+# Generation parameters for summarization.
+# Kept conservative to avoid huge outputs by mistake.
+max_new_tokens: 8192

@@ -40,7 +40,20 @@
 ## Kubernetes
 
 - Установите [NVIDIA GPU Operator](https://docs.nvidia.com/datacenter/cloud-native/gpu-operator/overview.html) или **NVIDIA Device Plugin** и убедитесь, что на узлах с GPU установлен драйвер.
-- В манифесте воркера уже указан ресурс `nvidia.com/gpu: 1`.
+- В манифестах GPU обычно нужен для:
+  - `whisper-worker-pyannote` (диаризация),
+  - `vllm-asr` / `vllm-llm` (если запущены на GPU).
+- Для CPU-воркеров (`whisper-api`, `whisper-worker-asr`, `whisper-worker-llm`) ресурс `nvidia.com/gpu` не обязателен.
+
+## Диаризация: флаги окружения
+
+Чтобы задачи диаризации действительно уходили в очередь `pyannote`, синхронизируйте флаги:
+
+- в `whisper-api`: `PYANNOTE_ENABLED=true` (дополнительно можно `PYANNOTE_PIPELINE_ENABLED=true`);
+- в `whisper-worker-pyannote`: `PYANNOTE_ENABLED=true`;
+- токен для pyannote только в `whisper-worker-pyannote`: `PYANNOTE_HF_TOKEN`.
+
+Рекомендуется держать `PYANNOTE_ENABLED` и `PYANNOTE_PIPELINE_ENABLED` в одинаковом состоянии для совместимости разных версий кода.
 
 ## Переменные окружения в образе
 

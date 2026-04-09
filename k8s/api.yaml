@@ -42,6 +42,12 @@ spec:
               value: postgresql+psycopg2://postgres:postgres@postgres.whisper.svc.cluster.local:5432/whisper_inference
             - name: CELERY_BROKER_URL
               value: amqp://guest:guest@rabbitmq.whisper.svc.cluster.local:5672//
+            # true → Celery шлёт inference.run_audio (diarize=true) в очередь pyannote
+            # (whisper-worker-pyannote). Очередь asr (whisper-worker-asr) обрабатывает обычный ASR.
+            - name: PYANNOTE_ENABLED
+              value: "true"
+            - name: PROMETHEUS_MULTIPROC_DIR
+              value: /tmp/prometheus_multiproc
           ports:
             - containerPort: 8000
       volumes:

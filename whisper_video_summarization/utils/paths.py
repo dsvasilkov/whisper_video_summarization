@@ -5,7 +5,7 @@ from hydra import compose, initialize
 
 def get_paths():
     with initialize(config_path="../../configs", version_base=None):
-        cfg = compose(config_name="train")
+        cfg = compose(config_name="infer")
     return cfg.paths
 
 

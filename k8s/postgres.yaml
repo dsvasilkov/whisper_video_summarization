@@ -1,51 +1,30 @@
 apiVersion: v1
-kind: PersistentVolumeClaim
+kind: Service
 metadata:
-  name: postgres-pvc
+  name: postgresql-master-hl
   namespace: whisper
 spec:
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 1Gi
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: postgres
-  namespace: whisper
-spec:
-  replicas: 1
+  clusterIP: None
   selector:
-    matchLabels:
-      app: postgres
-  template:
-    metadata:
-      labels:
-        app: postgres
-    spec:
-      containers:
-        - name: postgres
-          image: postgres:16-alpine
-          imagePullPolicy: IfNotPresent
-          env:
-            - name: POSTGRES_USER
-              value: postgres
-            - name: POSTGRES_PASSWORD
-              value: postgres
-            - name: POSTGRES_DB
-              value: whisper_inference
-          ports:
-            - containerPort: 5432
-          volumeMounts:
-            - name: data
-              mountPath: /var/lib/postgresql/data
-      volumes:
-        - name: data
-          persistentVolumeClaim:
-            claimName: postgres-pvc
+    app: postgresql-master
+  ports:
+    - port: 5432
+      targetPort: 5432
 ---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgresql-slave-hl
+  namespace: whisper
+spec:
+  clusterIP: None
+  selector:
+    app: postgresql-slave
+  ports:
+    - port: 5432
+      targetPort: 5432
+---
+# Service для подключения приложения (write-коннекты идут на master).
 apiVersion: v1
 kind: Service
 metadata:
@@ -53,8 +32,112 @@ metadata:
   namespace: whisper
 spec:
   selector:
-    app: postgres
+    app: postgresql-master
   ports:
     - port: 5432
       targetPort: 5432
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgresql-master
+  namespace: whisper
+spec:
+  serviceName: postgresql-master-hl
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgresql-master
+  template:
+    metadata:
+      labels:
+        app: postgresql-master
+    spec:
+      containers:
+        - name: postgresql
+          image: docker.io/bitnami/postgresql:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: postgres
+              containerPort: 5432
+          env:
+            - name: POSTGRESQL_REPLICATION_MODE
+              value: master
+            - name: POSTGRESQL_REPLICATION_USER
+              value: repl_user
+            - name: POSTGRESQL_REPLICATION_PASSWORD
+              value: repl_password
+            - name: POSTGRESQL_USERNAME
+              value: postgres
+            - name: POSTGRESQL_PASSWORD
+              value: postgres
+            - name: POSTGRESQL_DATABASE
+              value: whisper_inference
+            - name: ALLOW_EMPTY_PASSWORD
+              value: "yes"
+          volumeMounts:
+            - name: data
+              mountPath: /bitnami/postgresql
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 1Gi
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgresql-slave
+  namespace: whisper
+spec:
+  serviceName: postgresql-slave-hl
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgresql-slave
+  template:
+    metadata:
+      labels:
+        app: postgresql-slave
+    spec:
+      containers:
+        - name: postgresql
+          image: docker.io/bitnami/postgresql:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: postgres
+              containerPort: 5432
+          env:
+            - name: POSTGRESQL_REPLICATION_MODE
+              value: slave
+            - name: POSTGRESQL_REPLICATION_USER
+              value: repl_user
+            - name: POSTGRESQL_REPLICATION_PASSWORD
+              value: repl_password
+            - name: POSTGRESQL_MASTER_HOST
+              value: postgresql-master-0.postgresql-master-hl.whisper.svc.cluster.local
+            - name: POSTGRESQL_MASTER_PORT_NUMBER
+              value: "5432"
+            - name: POSTGRESQL_USERNAME
+              value: postgres
+            - name: POSTGRESQL_PASSWORD
+              value: postgres
+            - name: POSTGRESQL_DATABASE
+              value: whisper_inference
+            - name: ALLOW_EMPTY_PASSWORD
+              value: "yes"
+          volumeMounts:
+            - name: data
+              mountPath: /bitnami/postgresql
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 1Gi
 
