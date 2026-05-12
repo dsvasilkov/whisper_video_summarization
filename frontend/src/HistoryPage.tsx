@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { TaskStatusResponse } from './api';
-import { listTasks } from './api';
+import { getTaskStatus, listTasks } from './api';
 import { useAuth } from './AuthContext';
-import { ResultViewSwitch } from './TranscriptViewer';
+import { TaskQaForm } from './TaskQaForm';
+import { isTopicGraph, ResultViewSwitch } from './TranscriptViewer';
 
 const statusLabel: Record<TaskStatusResponse['status'], string> = {
   pending: 'В очереди',
@@ -25,6 +26,7 @@ export function HistoryPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState<TaskStatusResponse | null>(null);
+  const [openLoading, setOpenLoading] = useState(false);
 
   const load = useCallback(async () => {
     if (!token) return;
@@ -50,6 +52,27 @@ export function HistoryPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  const openTask = useCallback(
+    async (t: TaskStatusResponse) => {
+      if (!token) return;
+      setOpen(t);
+      setOpenLoading(true);
+      try {
+        const full = await getTaskStatus(String(t.task_id), token);
+        setOpen(full);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        setError(msg);
+        if (msg.includes('Not authenticated') || msg.includes('Invalid or expired token')) {
+          logout();
+        }
+      } finally {
+        setOpenLoading(false);
+      }
+    },
+    [token, logout],
+  );
 
   return (
     <div className="card">
@@ -85,7 +108,7 @@ export function HistoryPage() {
                     <button
                       type="button"
                       className="btn btn-small"
-                      onClick={() => setOpen(t)}
+                      onClick={() => void openTask(t)}
                     >
                       Подробнее
                     </button>
@@ -104,7 +127,7 @@ export function HistoryPage() {
           onClick={() => setOpen(null)}
         >
           <div
-            className="modal"
+            className={`modal${open.result_topic_graph?.nodes?.length ? ' modal--wide' : ''}`}
             role="dialog"
             aria-modal="true"
             aria-labelledby="modal-title"
@@ -119,22 +142,35 @@ export function HistoryPage() {
             <p className="muted small">
               {formatDate(open.created_at)} · {statusLabel[open.status]}
             </p>
+            {openLoading && <p className="loading">Загрузка деталей…</p>}
             {open.error_message && (
               <div className="result-block">
                 <h4>Ошибка</h4>
                 <pre>{open.error_message}</pre>
               </div>
             )}
-            {(open.result_transcription != null || open.result_summary != null) && (
+            {(open.result_transcription != null ||
+              open.result_summary != null ||
+              isTopicGraph(open.result_topic_graph ?? null)) && (
               <div className="result-block">
                 <h4>Результат</h4>
                 <ResultViewSwitch
                   key={open.task_id}
                   transcription={open.result_transcription}
                   summary={open.result_summary}
+                  topicGraph={open.result_topic_graph ?? null}
                 />
               </div>
             )}
+            {token &&
+              open.status === 'completed' &&
+              (open.result_transcription != null || open.result_summary != null) && (
+                <TaskQaForm
+                  taskId={open.task_id}
+                  token={token}
+                  onAuthError={() => logout()}
+                />
+              )}
             {open.status === 'completed' &&
               open.result_transcription == null &&
               open.result_summary == null && (

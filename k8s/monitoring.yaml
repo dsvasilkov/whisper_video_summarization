@@ -17,25 +17,41 @@ data:
       - job_name: whisper-asr-worker
         static_configs:
           - targets:
-              - whisper-worker-asr-metrics.whisper.svc.cluster.local:9101
-      - job_name: whisper-pyannote-worker
-        static_configs:
-          - targets:
-              - whisper-worker-pyannote-metrics.whisper.svc.cluster.local:9101
+              - whisper-worker-asr-metrics.whisper.svc.cluster.local:9103
       - job_name: whisper-qwen-worker
         static_configs:
           - targets:
               - whisper-worker-llm-metrics.whisper.svc.cluster.local:9101
-      - job_name: vllm-asr
-        metrics_path: /metrics
+      - job_name: whisper-rag-worker
         static_configs:
           - targets:
-              - vllm-asr.whisper.svc.cluster.local:8000
+              - whisper-worker-rag-metrics.whisper.svc.cluster.local:9102
+      - job_name: rabbitmq
+        static_configs:
+          - targets:
+              - rabbitmq.whisper.svc.cluster.local:15692
+      # Per-queue metrics (rabbitmq_detailed_*) for Little's Law; default /metrics aggregates without queue labels.
+      - job_name: rabbitmq-detailed
+        metrics_path: "/metrics/detailed?family=queue_coarse_metrics&family=queue_delivery_metrics"
+        static_configs:
+          - targets:
+              - rabbitmq.whisper.svc.cluster.local:15692
       - job_name: vllm-llm
         metrics_path: /metrics
         static_configs:
           - targets:
               - vllm-llm.whisper.svc.cluster.local:8000
+      - job_name: vllm-asr
+        metrics_path: /metrics
+        static_configs:
+          - targets:
+              - vllm-asr.whisper.svc.cluster.local:8000
+      # Ray Serve (прокси): OpenTelemetry/Prometheus — кастомные Counter из faster_whisper_app + стандартные Serve.
+      - job_name: ray-serve
+        metrics_path: /metrics
+        static_configs:
+          - targets:
+              - ray-serve.whisper.svc.cluster.local:8000
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -98,10 +114,430 @@ data:
     datasources:
       - name: Prometheus
         type: prometheus
+        uid: prometheus
         access: proxy
         url: http://prometheus.whisper.svc.cluster.local:9090
         isDefault: true
         editable: false
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboards-providers
+  namespace: whisper
+data:
+  providers.yaml: |
+    apiVersion: 1
+    providers:
+      - name: whisper
+        orgId: 1
+        folder: Whisper
+        type: file
+        disableDeletion: true
+        updateIntervalSeconds: 30
+        allowUiUpdates: false
+        options:
+          path: /var/lib/grafana-dashboards
+          foldersFromFilesStructure: false
+---
+# Dashboard JSON is kept as k8s/grafana/whisper-overview.json and is loaded into this
+# ConfigMap. To regenerate (e.g. after editing the JSON), run:
+#   kubectl -n whisper create configmap grafana-dashboards \
+#     --from-file=whisper-overview.json=k8s/grafana/whisper-overview.json \
+#     -o yaml --dry-run=client > /tmp/cm.yaml
+# and replace the configMap below with its contents (keep the metadata.name).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboards
+  namespace: whisper
+data:
+  whisper-overview.json: |
+    {
+      "annotations": {
+        "list": []
+      },
+      "editable": true,
+      "fiscalYearStartMonth": 0,
+      "graphTooltip": 1,
+      "id": null,
+      "links": [],
+      "liveNow": false,
+      "panels": [
+        {
+          "id": 1,
+          "title": "Whisper: audio sec / inference sec",
+          "description": "Ray Serve Faster-Whisper (job=ray-serve): аудио-сек / сек inference после приёма тела запроса.",
+          "type": "timeseries",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 24,
+            "x": 0,
+            "y": 0
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "none",
+              "custom": {
+                "drawStyle": "line",
+                "lineInterpolation": "linear",
+                "fillOpacity": 0,
+                "showPoints": "auto",
+                "spanNulls": false,
+                "lineWidth": 2,
+                "lineStyle": {
+                  "fill": "solid"
+                }
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "none"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "sum(rate(whisper_serve_input_audio_seconds_total{job=\"ray-serve\"}[1m])) / sum(rate(whisper_serve_inference_seconds_total{job=\"ray-serve\"}[1m]))",
+              "legendFormat": "avg"
+            }
+          ]
+        },
+        {
+          "id": 2,
+          "title": "Qwen: generation tokens/s (vLLM server)",
+          "description": "Счётчик generation tokens с пода vLLM (job=vllm-llm).",
+          "type": "timeseries",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 24,
+            "x": 0,
+            "y": 8
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "none",
+              "custom": {
+                "drawStyle": "line",
+                "lineInterpolation": "linear",
+                "fillOpacity": 0,
+                "showPoints": "auto",
+                "spanNulls": false,
+                "lineWidth": 2,
+                "lineStyle": {
+                  "fill": "solid"
+                }
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "none"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "(sum(rate({__name__=\"vllm:generation_tokens_total\",job=\"vllm-llm\"}[1m])) or sum(rate(vllm_generation_tokens_total{job=\"vllm-llm\"}[1m])))",
+              "legendFormat": "tokens/s"
+            }
+          ]
+        },
+        {
+          "id": 3,
+          "title": "Task wall time per component (one sample / terminal task)",
+          "type": "timeseries",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "description": "Секунды компонента на одну InferenceTask (одно observe при COMPLETED/FAILED). Qwen/embeddings из _meta после суммаризации. rate[1m] — острее по времени, чем 5m. Значения из JSONB читаются через float() (в т.ч. Decimal). Embeddings — только unit_graph в LLM (не RAG index).",
+          "gridPos": {
+            "h": 8,
+            "w": 24,
+            "x": 0,
+            "y": 16
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s",
+              "custom": {
+                "drawStyle": "line",
+                "lineInterpolation": "linear",
+                "fillOpacity": 0,
+                "showPoints": "auto",
+                "spanNulls": false,
+                "lineWidth": 2,
+                "lineStyle": {
+                  "fill": "solid"
+                }
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "none"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "sum by (task_type, status) (rate(task_component_wall_seconds_sum{component=\"whisper\"}[1m])) / sum by (task_type, status) (rate(task_component_wall_seconds_count{component=\"whisper\"}[1m]))",
+              "legendFormat": "whisper {{task_type}}/{{status}}"
+            },
+            {
+              "refId": "B",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "sum by (task_type, status) (rate(task_component_wall_seconds_sum{component=\"qwen\"}[1m])) / sum by (task_type, status) (rate(task_component_wall_seconds_count{component=\"qwen\"}[1m]))",
+              "legendFormat": "qwen {{task_type}}/{{status}}"
+            },
+            {
+              "refId": "C",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "sum by (task_type, status) (rate(task_component_wall_seconds_sum{component=\"pyannote\"}[1m])) / sum by (task_type, status) (rate(task_component_wall_seconds_count{component=\"pyannote\"}[1m]))",
+              "legendFormat": "pyannote {{task_type}}/{{status}}"
+            },
+            {
+              "refId": "D",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "sum by (task_type, status) (rate(task_component_wall_seconds_sum{component=\"embeddings\"}[1m])) / sum by (task_type, status) (rate(task_component_wall_seconds_count{component=\"embeddings\"}[1m]))",
+              "legendFormat": "embeddings {{task_type}}/{{status}}"
+            }
+          ]
+        },
+        {
+          "id": 4,
+          "title": "API: avg latency by route",
+          "type": "timeseries",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 24,
+            "x": 0,
+            "y": 24
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s",
+              "custom": {
+                "drawStyle": "line",
+                "lineInterpolation": "smooth",
+                "fillOpacity": 0,
+                "showPoints": "auto",
+                "spanNulls": false,
+                "lineWidth": 2,
+                "lineStyle": {
+                  "fill": "solid"
+                }
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "none"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "sum by (route, method) (rate(api_http_request_duration_seconds_sum[5m])) / sum by (route, method) (rate(api_http_request_duration_seconds_count[5m]))",
+              "legendFormat": "{{method}} {{route}} avg"
+            }
+          ]
+        },
+        {
+          "id": 6,
+          "title": "GPU VRAM: общий %",
+          "description": "Нужны метрики inference_gpu_memory_used_bytes и inference_gpu_memory_total_bytes (NVML) на скрейпе воркера.",
+          "type": "timeseries",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 24,
+            "x": 0,
+            "y": 32
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percent",
+              "min": 0,
+              "max": 100,
+              "custom": {
+                "drawStyle": "line",
+                "lineInterpolation": "smooth",
+                "fillOpacity": 0,
+                "showPoints": "auto",
+                "spanNulls": false,
+                "lineWidth": 2,
+                "lineStyle": {
+                  "fill": "solid"
+                }
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "none"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "100 * sum(max by (gpu_index) (inference_gpu_memory_used_bytes)) / clamp_min(sum(max by (gpu_index) (inference_gpu_memory_total_bytes)), 1)",
+              "legendFormat": "VRAM % общий avg"
+            }
+          ]
+        },
+        {
+          "id": 9,
+          "title": "Task total: creation → terminal status",
+          "type": "timeseries",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 9,
+            "w": 24,
+            "x": 0,
+            "y": 40
+          },
+          "description": "Одна точка на задачу в момент COMPLETED/FAILED: created_at → updated_at в БД. График — среднее duration по rate() за окно (между завершениями линия может падать к 0).",
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s",
+              "custom": {
+                "drawStyle": "line",
+                "lineInterpolation": "smooth",
+                "fillOpacity": 0,
+                "showPoints": "auto",
+                "spanNulls": false,
+                "lineWidth": 2,
+                "lineStyle": {
+                  "fill": "solid"
+                }
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "none"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "sum by (task_type, status) (rate(task_total_seconds_sum[10m])) / sum by (task_type, status) (rate(task_total_seconds_count[10m]))",
+              "legendFormat": "avg {{task_type}}/{{status}}"
+            }
+          ]
+        }
+      ],
+      "refresh": "30s",
+      "schemaVersion": 39,
+      "tags": [
+        "whisper",
+        "video-summarization"
+      ],
+      "templating": {
+        "list": []
+      },
+      "time": {
+        "from": "now-1h",
+        "to": "now"
+      },
+      "timepicker": {},
+      "timezone": "",
+      "title": "Whisper Video Summarization — Overview",
+      "uid": "whisper-overview",
+      "version": 11,
+      "weekStart": ""
+    }
+
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -133,12 +569,22 @@ spec:
           volumeMounts:
             - name: grafana-datasources
               mountPath: /etc/grafana/provisioning/datasources
+            - name: grafana-dashboards-providers
+              mountPath: /etc/grafana/provisioning/dashboards
+            - name: grafana-dashboards
+              mountPath: /var/lib/grafana-dashboards
             - name: grafana-storage
               mountPath: /var/lib/grafana
       volumes:
         - name: grafana-datasources
           configMap:
             name: grafana-datasources
+        - name: grafana-dashboards-providers
+          configMap:
+            name: grafana-dashboards-providers
+        - name: grafana-dashboards
+          configMap:
+            name: grafana-dashboards
         - name: grafana-storage
           emptyDir: {}
 ---

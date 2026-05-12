@@ -1,5 +1,5 @@
 whisper_model_dir: whisper_video_summarization/models/whisper
-vllm_whisper_model_dir: data/models/vllm/openai__whisper-large-v3
+vllm_asr_model_dir: data/models/vllm/Systran__faster-whisper-large-v3
 vllm_qwen_model_dir: data/models/vllm/unsloth__Qwen3.5-9B-GGUF
 # Токенайзер + config.json для GGUF (без весов; см. hf_models.download_vllm_snapshots_if_missing)
 vllm_qwen_hf_tokenizer_dir: data/models/vllm/Qwen__Qwen3.5-9B

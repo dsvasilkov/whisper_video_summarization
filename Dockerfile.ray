@@ -1,9 +1,15 @@
-# Celery worker для очереди asr (с pyannote на GPU при включённой диаризации).
-# docker build -f Dockerfile.worker-pyannote -t whisper-worker-asr:latest .
-FROM nvidia/cuda:13.0.0-runtime-ubuntu22.04 AS cuda-npp
-RUN mkdir -p /export \
-    && find /usr/local -name 'libnpp*.so*' -exec cp -a {} /export/ \; \
-    && test -n "$(ls -A /export)" || (echo "NPP libs not found under /usr/local" && exit 1)
+# Ray Serve (GPU): pyannote + bge-m3 в одном контейнере (`serve run` multi-app).
+#
+# CUDA 12 libs (cuBLAS, cuDNN, …): faster-whisper/ctranslate2 ищут libcublas.so.12 —
+# python:bookworm без них даёт HTTP 500 на /transcribe.
+#
+# Сборка:
+#   docker build -f Dockerfile.ray -t whisper-ray:latest .
+
+FROM nvidia/cuda:12.6.3-cudnn-runtime-ubuntu22.04 AS cuda-libs
+RUN mkdir -p /export/cuda-lib64 \
+    && cp -a /usr/local/cuda/lib64/. /export/cuda-lib64/ \
+    && test -n "$(find /export/cuda-lib64 -name 'libcublas.so*' -print -quit)"
 
 FROM python:3.12-bookworm
 
@@ -16,10 +22,11 @@ ENV DEBIAN_FRONTEND=noninteractive \
     UV_PROJECT_ENVIRONMENT=/opt/venv \
     PATH="/opt/venv/bin:$PATH" \
     PIP_DEFAULT_TIMEOUT=4000 \
-    PROMETHEUS_MULTIPROC_DIR=/tmp/prometheus_multiproc \
-    LD_LIBRARY_PATH=/usr/local/npp/lib
+    CUDA_HOME=/usr/local/cuda \
+    LD_LIBRARY_PATH=/usr/local/cuda/lib64
 
-COPY --from=cuda-npp /export/ /usr/local/npp/lib/
+RUN mkdir -p /usr/local/cuda/lib64
+COPY --from=cuda-libs /export/cuda-lib64/ /usr/local/cuda/lib64/
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
@@ -29,7 +36,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     ffmpeg \
     curl \
-    netcat-openbsd \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/* \
     && ln -sf /usr/bin/python3 /usr/local/bin/python \
@@ -39,7 +45,7 @@ RUN python3 -m venv /opt/venv \
     && curl -LsSf https://astral.sh/uv/install.sh | sh \
     && ln -sf /root/.local/bin/uv /usr/local/bin/uv
 
-ARG UV_GROUP_FLAGS="--group inference --group pyannote --group monitoring"
+ARG UV_GROUP_FLAGS="--group inference --group serve"
 
 WORKDIR /app
 
@@ -49,5 +55,6 @@ RUN uv sync --frozen --no-install-project ${UV_GROUP_FLAGS}
 
 COPY . /app/
 
-EXPOSE 8000 8080 8501
-CMD ["/bin/bash"]
+EXPOSE 8000 8265
+
+CMD ["/bin/bash", "-c", "exec /opt/venv/bin/serve run /app/k8s/ray/serve-multiapp.yaml --blocking"]

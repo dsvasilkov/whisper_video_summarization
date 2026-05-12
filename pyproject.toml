@@ -13,6 +13,8 @@ dependencies = [
     "python-multipart>=0.0.21,<0.0.22",
     "pyyaml>=6.0.3,<7.0.0",
     "aio-celery>=0.22.0,<0.23.0",
+    "redis>=5.0.0,<6.0.0",
+    "aioboto3>=15.0.0,<16.0.0",
     "psycopg[binary]>=3.2.10,<4.0.0",
     "psycopg2-binary>=2.9.10,<3.0.0",
     "sqlalchemy>=2.0.36,<3.0.0",
@@ -30,23 +32,34 @@ dependencies = [
 inference = [
     "soundfile>=0.13.1,<0.14.0",
     "openai>=1.60.0,<2.0.0",
+    "nltk>=3.9.1,<4.0.0",
+    "faiss-cpu>=1.12.0,<2.0.0",
+    "python-igraph>=0.11.9,<0.12.0",
+    "leidenalg>=0.10.2,<0.11.0",
+    "qdrant-client>=1.13.3,<2.0.0",
+    "llama-index-core>=0.11.0",
+    "llama-index-vector-stores-qdrant>=0.3.0",
+    "llama-index-retrievers-bm25>=0.3.0",
+    "llama-index-embeddings-huggingface>=0.3.0",
+    "numpy>=1.26",
+    "transformers>=4.43,<5",
+    "faster-whisper>=1.1.0,<2",
+    "llama-index-embeddings-openai>=0.2.0",
 ]
-pyannote = [
+monitoring = [
+    "psutil>=7.1.3,<8.0.0",
+    "nvidia-ml-py>=13.580.82,<14.0.0",
+]
+serve = [
+    "ray[serve]>=2.55.1",
     "torch>=2.11.0,<2.12.0",
     "torchaudio>=2.11.0,<2.12.0",
     "pyannote-audio>=4.0.0,<5.0.0",
 ]
-monitoring = [
-    "gitpython>=3.1.45,<4.0.0",
-    "fsspec>=2025.12.0,<2026.0.0",
-    "prometheus-client>=0.23.1,<0.24.0",
-    "psutil>=7.1.3,<8.0.0",
-    "nvidia-ml-py>=13.580.82,<14.0.0",
-]
-# Скачивание HF-снапшотов в data/models (scripts/download_vllm_models.py)
-models = [
-    "huggingface_hub>=0.30.0,<1.0.0",
-]
+
+# NPM-зависимости фронтенда (не pip): установка только из frontend/ — см. там package.json.
+[tool.whisper_frontend.npm]
+"react-markdown" = "^9.1.0"
 
 [build-system]
 requires = ["setuptools>=69"]

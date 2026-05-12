@@ -1,6 +1,9 @@
 type: qwen
-name: "Qwen/Qwen3.5-0.8B"
+name: "cyankiwi/Qwen3.5-2B-AWQ-4bit"
 
-# Generation parameters for summarization.
-# Kept conservative to avoid huge outputs by mistake.
+# Soft cap for RAG / long-context paths (see LLM_CONTEXT_MAX_LENGTH env).
+# Должен быть не ниже желаемой длины ответа: max_tokens=min(max_new_tokens, context budget).
+context_max_length: 8192
+
+# Generation parameters for summarization (финальный конспект может быть развёрнутым).
 max_new_tokens: 8192

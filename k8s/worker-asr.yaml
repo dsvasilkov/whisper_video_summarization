@@ -1,0 +1,99 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: whisper-worker-asr
+  namespace: whisper
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: whisper-worker-asr
+  template:
+    metadata:
+      labels:
+        app: whisper-worker-asr
+    spec:
+      containers:
+        - name: worker-asr
+          image: whisper-worker:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: metrics
+              containerPort: 9103
+          startupProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -lc
+                - exec curl -fsS "${WHISPER_SERVE_URL}/health" >/dev/null
+            periodSeconds: 5
+            timeoutSeconds: 10
+            failureThreshold: 60
+          command:
+            - aio_celery
+            - worker
+            - whisper_video_summarization.celery_app.app:celery_app
+            - -Q
+            - asr
+            - -l
+            - INFO
+            - --concurrency=1
+          resources:
+            requests:
+              memory: "4Gi"
+              cpu: "2"
+            limits:
+              memory: "8Gi"
+              cpu: "4"
+          env:
+            - name: PYTHONPATH
+              value: /app
+            - name: DATABASE_URL
+              value: postgresql+psycopg2://postgres:postgres@postgres.whisper.svc.cluster.local:5432/whisper_inference
+            - name: CELERY_BROKER_URL
+              value: amqp://guest:guest@rabbitmq.whisper.svc.cluster.local:5672//
+            # Тот же Redis, что у API: pub/sub для SSE статусов задач (см. utils/task_events.py).
+            - name: CELERY_RESULT_BACKEND
+              value: redis://redis.whisper.svc.cluster.local:6379/0
+            # MinIO / S3-compatible object storage for uploads.
+            - name: S3_ENDPOINT_URL
+              value: http://minio.whisper.svc.cluster.local:9000
+            - name: S3_BUCKET
+              value: whisper-audio
+            - name: S3_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: minio-secrets
+                  key: MINIO_ROOT_USER
+            - name: S3_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: minio-secrets
+                  key: MINIO_ROOT_PASSWORD
+            # ASR: Faster-Whisper в Ray Serve (`k8s/ray-serve.yaml`, маршрут /whisper).
+            - name: WHISPER_SERVE_URL
+              value: http://ray-serve.whisper.svc.cluster.local:8000/whisper
+            # Диаризация pyannote в том же Ray multi-app.
+            - name: PYANNOTE_SERVE_URL
+              value: http://ray-serve.whisper.svc.cluster.local:8000/pyannote
+            - name: WORKER_METRICS_PORT
+              value: "9103"
+            - name: PROMETHEUS_MULTIPROC_DIR
+              value: /tmp/prometheus_multiproc_asr
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: whisper-worker-asr-metrics
+  namespace: whisper
+spec:
+  selector:
+    app: whisper-worker-asr
+  ports:
+    - name: metrics
+      port: 9103
+      targetPort: 9103
+

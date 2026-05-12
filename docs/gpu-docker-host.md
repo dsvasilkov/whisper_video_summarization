@@ -41,19 +41,17 @@
 
 - Установите [NVIDIA GPU Operator](https://docs.nvidia.com/datacenter/cloud-native/gpu-operator/overview.html) или **NVIDIA Device Plugin** и убедитесь, что на узлах с GPU установлен драйвер.
 - В манифестах GPU обычно нужен для:
-  - `whisper-worker-pyannote` (диаризация),
-  - `vllm-asr` / `vllm-llm` (если запущены на GPU).
-- Для CPU-воркеров (`whisper-api`, `whisper-worker-asr`, `whisper-worker-llm`) ресурс `nvidia.com/gpu` не обязателен.
+  - `ray-serve` (pyannote + embeddings + faster-whisper ASR в одном поде),
+  - `vllm-llm` и/или `vllm-asr` (если запущены на GPU).
+- Для `whisper-worker-asr` GPU **не** нужен, если ASR идёт в Ray (только `WHISPER_SERVE_URL`). Для `whisper-api` и `whisper-worker-llm` GPU не обязателен, если LLM на отдельном vLLM-поде.
 
 ## Диаризация: флаги окружения
 
-Чтобы задачи диаризации действительно уходили в очередь `pyannote`, синхронизируйте флаги:
+- в **`whisper-api`**: `PYANNOTE_ENABLED=true`, чтобы задача создавалась с диаризацией (клиент может отключить через `force_disable_diarization`);
+- в **`whisper-worker-asr`**: `PYANNOTE_SERVE_URL` — базовый URL приложения pyannote в Ray Serve (ASR и диаризация выполняются параллельно в коде транскрипции);
+- в **поде Ray Serve**: `PYANNOTE_HF_TOKEN` (секрет `pyannote-secrets`), модель задаётся в `k8s/ray-serve.yaml`.
 
-- в `whisper-api`: `PYANNOTE_ENABLED=true` (дополнительно можно `PYANNOTE_PIPELINE_ENABLED=true`);
-- в `whisper-worker-pyannote`: `PYANNOTE_ENABLED=true`;
-- токен для pyannote только в `whisper-worker-pyannote`: `PYANNOTE_HF_TOKEN`.
-
-Рекомендуется держать `PYANNOTE_ENABLED` и `PYANNOTE_PIPELINE_ENABLED` в одинаковом состоянии для совместимости разных версий кода.
+Рекомендуется при необходимости держать `PYANNOTE_ENABLED` и `PYANNOTE_PIPELINE_ENABLED` согласованными для локального/in-process pyannote.
 
 ## Переменные окружения в образе
 

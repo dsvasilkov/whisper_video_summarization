@@ -95,6 +95,7 @@ class InferenceTask(Base):
     input_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     result_transcription_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     result_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    result_topic_graph: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

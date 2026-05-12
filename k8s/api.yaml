@@ -17,9 +17,6 @@ spec:
         - name: api
           image: whisper-api:latest
           imagePullPolicy: IfNotPresent
-          volumeMounts:
-            - name: uploads
-              mountPath: /app/data
           command:
             - uvicorn
             - whisper_video_summarization.api.app:app
@@ -42,18 +39,40 @@ spec:
               value: postgresql+psycopg2://postgres:postgres@postgres.whisper.svc.cluster.local:5432/whisper_inference
             - name: CELERY_BROKER_URL
               value: amqp://guest:guest@rabbitmq.whisper.svc.cluster.local:5672//
-            # true → Celery шлёт inference.run_audio (diarize=true) в очередь pyannote
-            # (whisper-worker-pyannote). Очередь asr (whisper-worker-asr) обрабатывает обычный ASR.
+            - name: CELERY_RESULT_BACKEND
+              value: redis://redis.whisper.svc.cluster.local:6379/0
+            - name: QDRANT_URL
+              value: http://qdrant.whisper.svc.cluster.local:6333
+            # MinIO / S3-compatible object storage for uploads.
+            - name: S3_ENDPOINT_URL
+              value: http://minio.whisper.svc.cluster.local:9000
+            # Public URL for browser presigned PUTs (must be resolvable from the user's machine).
+            - name: S3_PRESIGN_ENDPOINT_URL
+              value: http://minio.whisper.local
+            - name: S3_BUCKET
+              value: whisper-audio
+            - name: S3_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: minio-secrets
+                  key: MINIO_ROOT_USER
+            - name: S3_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: minio-secrets
+                  key: MINIO_ROOT_PASSWORD
+            - name: MINIO_WEBHOOK_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: minio-secrets
+                  key: MINIO_WEBHOOK_TOKEN
+            # API решает, запрашивать ли диаризацию; ASR‑воркер звонит в Ray Serve по PYANNOTE_SERVE_URL.
             - name: PYANNOTE_ENABLED
               value: "true"
             - name: PROMETHEUS_MULTIPROC_DIR
               value: /tmp/prometheus_multiproc
           ports:
             - containerPort: 8000
-      volumes:
-        - name: uploads
-          persistentVolumeClaim:
-            claimName: whisper-uploads
 ---
 apiVersion: v1
 kind: Service

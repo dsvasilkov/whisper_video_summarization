@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 VLLM_MODEL_PATHS: dict[str, str] = {
-    "openai/whisper-large-v3": "vllm_whisper_model_dir",
+    "Systran/faster-whisper-large-v3": "vllm_asr_model_dir",
     "unsloth/Qwen3.5-9B-GGUF (Q8 GGUF)": "vllm_qwen_model_dir",
     "Qwen/Qwen3.5-9B (tokenizer+config)": "vllm_qwen_hf_tokenizer_dir",
 }

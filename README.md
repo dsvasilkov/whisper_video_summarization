@@ -1,170 +1,150 @@
 # Whisper Video Summarization
 
-Проект для автоматической суммаризации видео с использованием моделей Whisper и Qwen (через vLLM). Система транскрибирует видеофайлы с помощью Whisper и создает краткие резюме транскрипций через OpenAI-совместимый API vLLM.
+Проект для автоматической суммаризации видео: **ASR** через **Ray Serve** (faster-whisper [Systran/faster-whisper-large-v3](https://huggingface.co/Systran/faster-whisper-large-v3), `int8`) или отдельный **vLLM** с аудио-моделью (см. `k8s/vllm-asr.yaml`); **LLM** — **Qwen** через **vLLM** OpenAI API. Celery-воркеры ставят задачи в очереди; ASR-воркер ходит по HTTP к сервису транскрипции; суммаризация и RAG — к vLLM и вспомогательным сервисам.
 
 ## Описание проекта
 
-Проект представляет собой систему суммаризации видео, которая объединяет:
+- **ASR** — [Ray Serve](https://docs.ray.io/en/latest/serve/index.html): faster-whisper + опционально **pyannote** (диаризация) в одном multi-app деплое (`Dockerfile.ray`, `k8s/ray-serve.yaml`). Альтернатива: деплой **`k8s/vllm-asr.yaml`** (тот же образ `whisper-vllm`, модель `Systran/faster-whisper-large-v3`).
+- **Qwen (vLLM)** — суммаризация, граф тем / mind map, RAG; идентификатор модели задаётся в **`configs/model/qwen.yaml`**.
+- **FastAPI** — постановка задач, статусы и результаты из БД, presign MinIO, webhook событий.
+- **aio-celery + RabbitMQ** — очереди **`asr`**, **`llm`**, **`rag`**.
+- **PostgreSQL + SQLAlchemy** — задачи и пользователи.
+- **Redis** — `CELERY_RESULT_BACKEND` (ожидание RAG из API) и pub/sub для **SSE** статусов (`whisper_video_summarization/utils/task_events.py`; при необходимости отдельно **`TASK_EVENTS_REDIS_URL`**).
+- **Qdrant** — векторный индекс для RAG (`k8s/qdrant.yaml`).
+- **React + TypeScript (Vite)** — загрузка медиа, транскрипт, иерархия/лекция, mind map, Q&A.
+- **Prometheus + Grafana** — `k8s/monitoring.yaml`, дашборд `k8s/grafana/whisper-overview.json`.
+- **Hydra** — `configs/`; **DVC** — данные и модели (см. `whisper_video_summarization/utils/dvc.py`).
 
-- **Whisper** - модель от OpenAI для транскрипции аудио и видео в текст
-- **Qwen (vLLM)** - LLM для генерации суммаризаций текста на русском языке
-- **FastAPI** - REST API (producer): постановка задач в очередь, получение статусов из БД
-- **AIO-Celery + RabbitMQ** - очередь задач: async consumer обрабатывает инференс в воркерах
-- **PostgreSQL + SQLAlchemy** - хранение статусов и результатов задач инференса
-- **React + TypeScript** - веб-интерфейс (Vite) для загрузки медиа, просмотра транскрипции/диаризации и суммаризации
-- **Prometheus + Grafana** - мониторинг инференса Whisper/Qwen (GPU/RAM/CPU, RPM, tokens/sec, context length)
-- **DVC** - управление версиями данных и моделей
-- **Hydra** - управление конфигурациями
+**Модели и пути (ориентир):**
 
-Модели vLLM, которые хранятся в DVC:
-- `openai/whisper-large-v3` -> `whisper_video_summarization/models/vllm/openai__whisper-large-v3`
-- `Qwen/Qwen3.5-9B` -> `whisper_video_summarization/models/vllm/Qwen__Qwen3.5-9B`
+- ASR (кэш): `Systran/faster-whisper-large-v3` → `data/models/vllm/Systran__faster-whisper-large-v3` (`configs/paths/paths.yaml`).
+- LLM: **`configs/model/qwen.yaml`** — по умолчанию [`cyankiwi/Qwen3.5-2B-AWQ-4bit`](https://huggingface.co/cyankiwi/Qwen3.5-2B-AWQ-4bit). Поля `vllm_qwen_*` в `configs/paths/paths.yaml` относятся к локальному кэшу/legacy; сверяйте с актуальным `qwen.yaml`.
+
+**Пайплайн суммаризации (кратко):** после ASR строится **unit graph** (Leiden и др.), при необходимости **иерархическое суммирование** (`llm/hierarchy_summarize.py`) и **mind map** (`llm/topic_graph_mindmap.py`) — см. `llm/infer.py`.
 
 ### Основные возможности
 
-1. **Транскрипция видео**: Преобразование видеофайлов в текст с помощью Whisper
-2. **Суммаризация текста**: Создание кратких резюме из транскрипций с помощью Qwen/vLLM
-3. **Инференс через очередь**: Асинхронная обработка задач через RabbitMQ + Celery worker
-4. **Мониторинг инференса**: метрики через Prometheus и дашборды в Grafana
-5. **Веб-интерфейс**: Удобный интерфейс для работы с системой (React + TypeScript)
+1. Транскрипция (Ray Serve или vLLM ASR по выбору деплоя).
+2. Диаризация (pyannote в Ray, флаг **`PYANNOTE_ENABLED`** на API).
+3. Суммаризация и визуализация структуры (темы, лекция, mind map).
+4. RAG / вопросы по транскрипту (очередь **`rag`**).
+5. Очередь и мониторинг (Prometheus/Grafana).
 
 ## Технические детали
 
 ### Развёртывание (Docker и Kubernetes)
 
-Основной способ запуска в продакшене — **Kubernetes**: PostgreSQL, RabbitMQ, API, Celery worker (GPU), Prometheus, Grafana и frontend, Ingress. Docker Compose в репозитории **не используется**. Типичные манифесты лежат в каталоге **`k8s/`** (namespace `whisper`), если он есть в вашей ветке.
+В продакшене ориентир — **Kubernetes**. Docker Compose в репозитории не используется. Манифесты: **`k8s/`**, namespace **`whisper`**.
 
 #### Требования
 
-- Kubernetes-кластер (в т.ч. minikube) с Ingress Controller
-- Docker (для сборки образов ниже)
-- Для GPU-воркера: драйвер NVIDIA на узлах и [NVIDIA Device Plugin / GPU Operator](https://docs.nvidia.com/datacenter/cloud-native/gpu-operator/overview.html); см. также `docs/gpu-docker-host.md`
+- Кластер с Ingress.
+- Docker для сборки образов.
+- GPU: драйвер NVIDIA, [GPU Operator / device plugin](https://docs.nvidia.com/datacenter/cloud-native/gpu-operator/overview.html); см. **`docs/gpu-docker-host.md`**.
 
-#### Образы: назначение и размер (ориентир)
+#### Образы
 
-| Тег образа | Файл | Назначение |
-|------------|------|------------|
-| **whisper-api** (~0.5–2 GB) | [`Dockerfile`](Dockerfile) | FastAPI: очередь, БД, DVC, **без** PyTorch/CUDA |
-| **whisper-worker** (~10–12 GB) | [`Dockerfile.worker`](Dockerfile.worker) | Celery worker для очереди `llm` (суммаризация) |
-| **whisper-worker-asr** (~10–12 GB) | [`Dockerfile.worker`](Dockerfile.worker) | Celery worker для очереди `asr` (ASR через vLLM) |
-| **whisper-worker-pyannote** | [`Dockerfile.worker-pyannote`](Dockerfile.worker-pyannote) | Celery worker для очереди `pyannote` (диаризация и merge спикеров) |
-| **whisper-vllm-asr** | [`Dockerfile.vllm-asr`](Dockerfile.vllm-asr) | vLLM OpenAI server для ASR (`vllm[audio]`) |
-| **whisper-frontend** | [`frontend/Dockerfile`](frontend/Dockerfile) | статика + nginx |
+| Тег | Dockerfile | Назначение |
+|-----|--------------|------------|
+| **whisper-api** | [`Dockerfile`](Dockerfile) | FastAPI; **uv** с **`UV_GROUP_FLAGS`** по умолчанию **`--group inference --group monitoring`** (без отдельного CUDA base-образа; PyTorch из lock для зависимостей inference на slim) |
+| **whisper-worker** | [`Dockerfile.worker`](Dockerfile.worker) | Один образ для воркеров очередей **`asr` / `llm` / `rag`** (в K8s различаются командами **`-Q`** ) |
+| **whisper-ray** | [`Dockerfile.ray`](Dockerfile.ray) | Ray Serve: faster-whisper, pyannote, embeddings (`k8s/ray-serve.yaml`) |
+| **whisper-vllm** | [`Dockerfile.vllm`](Dockerfile.vllm) | vLLM OpenAI server + `vllm[audio]` — **`k8s/vllm-llm.yaml`** (LLM); тот же тег для **`k8s/vllm-asr.yaml`** при альтернативном ASR |
+| **whisper-frontend** | [`frontend/Dockerfile`](frontend/Dockerfile) | Статика + nginx |
 
-Раньше один тяжёлый образ покрывал все сервисы. Сейчас роли разделены; кратко см. также [`docs/docker-images.md`](docs/docker-images.md).
+Подробнее: [`docs/docker-images.md`](docs/docker-images.md).
 
-#### Что внутри каждого Dockerfile
-
-**[`Dockerfile`](Dockerfile) (API)** — база `python:3.12-slim-bookworm`, зависимости через **uv**: базовые + группа **`monitoring`** (`uv sync --group monitoring`). Старт: `uvicorn` на порту **8000**. Есть `ffmpeg` и инициализация git-репозитория в `/app` для DVC. PyTorch и CUDA **не** устанавливаются.
-
-**[`Dockerfile.worker`](Dockerfile.worker) (инференс на GPU)** — база `nvidia/cuda:13.0.2-cudnn-runtime-ubuntu24.04`, переменные `NVIDIA_VISIBLE_DEVICES` / `NVIDIA_DRIVER_CAPABILITIES`. Зависимости через **uv**: базовые + группы из `UV_GROUP_FLAGS` (по умолчанию **`--group inference --group monitoring`**: PyTorch с индекса `cu130`, Whisper, transformers и метрики инференса). При сборке выполняется **`dvc repro whisper_model`** — скачивается чекпоинт Whisper; модель задаётся build-arg **`WHISPER_MODEL`** (по умолчанию `large-v3`). **По умолчанию `CMD` — `/bin/bash`** — в Kubernetes или `docker run` нужно явно указать команду Celery worker (см. ниже). Порты в образе объявлены для совместимости с отладкой; рабочая нагрузка — очередь RabbitMQ.
-
-Для мониторинга инференса используйте манифест **`k8s/monitoring.yaml`** (Prometheus + Grafana).
-
-#### Сборка образов
+#### Сборка
 
 ```bash
-# пример: minikube — собирать в docker-демоне кластера
-eval $(minikube docker-env)
+eval $(minikube docker-env)   # пример для minikube
 docker build -t whisper-api:latest .
 docker build -f Dockerfile.worker -t whisper-worker:latest .
-docker build -f Dockerfile.worker -t whisper-worker-asr:latest .
-docker build -f Dockerfile.worker-pyannote -t whisper-worker-pyannote:latest .
-docker build -f Dockerfile.vllm-asr -t whisper-vllm-asr:latest .
+docker build -f Dockerfile.ray -t whisper-ray:latest .
+docker build -f Dockerfile.vllm -t whisper-vllm:latest .
 docker build -t whisper-frontend:latest ./frontend
 ```
 
-#### Kubernetes: типичная схема
+Дополнительные имена тегов (`whisper-worker-asr` и т.д.) — тот же **`Dockerfile.worker`**, удобство для локальных скриптов.
 
-- **Namespace:** например `whisper`.
-- **Компоненты:** PostgreSQL, RabbitMQ, Deployment **API** (`whisper-api`), Celery workers (**`whisper-worker-asr`**, **`whisper-worker-llm`**, **`whisper-worker-pyannote`**), vLLM-сервисы, **Prometheus**, **Grafana**, **frontend**, **Ingress**.
-- **Переменные окружения (важно):**
-  - **`DATABASE_URL`** — строка SQLAlchemy для API и worker (одна и та же БД), например `postgresql+psycopg2://user:pass@postgres:5432/whisper_inference`.
-  - **`CELERY_BROKER_URL`** — брокер RabbitMQ, например `amqp://guest:guest@rabbitmq.whisper.svc.cluster.local:5672//` (подставьте имя сервиса из ваших манифестов).
-  - **`PYANNOTE_ENABLED`** / **`PYANNOTE_PIPELINE_ENABLED`** — включение диаризации (рекомендуется задавать оба флага одинаково в `api` и `pyannote-worker`).
-  - **`PYANNOTE_HF_TOKEN`** — токен HuggingFace для pyannote pipeline (только в `pyannote-worker`).
-- **Тома:** общий PVC для загрузок (например **`whisper-uploads`**) с монтированием в **`/app/data`** и у API, и у worker, чтобы путь к файлу из API совпадал с путём в воркере.
-- **Worker:** в `resources.limits` укажите **`nvidia.com/gpu: 1`** (или по политике кластера). Команда контейнера должна запускать Celery, например:
+#### Kubernetes: компоненты и переменные
+
+- **Сервисы:** PostgreSQL, RabbitMQ, **Redis**, MinIO, API, **whisper-worker-asr**, **whisper-worker-llm**, **whisper-worker-rag**, **ray-serve** (образ `whisper-ray:latest`), **vllm-llm** (`whisper-vllm:latest`), опционально **vllm-asr**, **Qdrant**, Prometheus, Grafana, frontend, Ingress.
+- **`DATABASE_URL`**, **`CELERY_BROKER_URL`**, **`CELERY_RESULT_BACKEND`** (Redis).
+- **`S3_*`**, **`S3_PRESIGN_ENDPOINT_URL`** — MinIO и presign для браузера.
+- ASR: **`WHISPER_SERVE_URL`** (Ray `/whisper` или URL vLLM ASR); **`PYANNOTE_SERVE_URL`**, **`PYANNOTE_ENABLED`** (API), **`PYANNOTE_HF_TOKEN`** (Ray, секрет в `ray-serve.yaml`).
+- LLM/RAG: **`VLLM_LLM_BASE_URL`**, **`RAG_EMBEDDINGS_SERVE_URL`**, **`QDRANT_URL`**.
+
+**Celery** — с явной очередью, как в манифестах:
 
 ```bash
-aio_celery worker whisper_video_summarization.celery_app.app:celery_app --loglevel=info
+aio_celery worker whisper_video_summarization.celery_app.app:celery_app -Q asr  -l INFO --concurrency=1
+aio_celery worker whisper_video_summarization.celery_app.app:celery_app -Q llm  -l INFO --concurrency=1
+aio_celery worker whisper_video_summarization.celery_app.app:celery_app -Q rag  -l INFO --concurrency=1
 ```
 
-- **Ingress:** фронтенд на корне, API за префиксом **`/api`** (как в nginx фронта).
+**Ingress:** UI на корне, бэкенд за префиксом **`/api`** (см. `frontend/nginx.conf`). Корневое приложение монтирует API: `app.mount("/api", api_app)` в `whisper_video_summarization/api/app.py`.
 
 ```bash
 kubectl apply -f k8s/
 ```
 
-Доступ к UI настраивается через Ingress (пример хоста `whisper.local` в `k8s/ingress.yaml`, если файл есть в репозитории).
+Пример хоста: `whisper.local` в `k8s/ingress.yaml`.
 
-Отдельные конфиги Nginx без Ingress: каталог **`nginx/`** (если присутствует).
+### API и очереди
 
-### API и контракт очередей
+Все пути ниже с префиксом **`/api`** (полный URL вида `https://<host>/api/...`).
 
-**Эндпоинты FastAPI (producer):**
+| Метод | Путь | Описание |
+|--------|------|----------|
+| POST | `/api/uploads/audio/presign` | Presign загрузки WAV в S3/MinIO |
+| POST | `/api/minio/events` | Webhook `ObjectCreated:*` → постановка ASR |
+| GET | `/api/tasks/{task_id}` | Статус и результат |
+| GET | `/api/tasks` | Список (`limit`, `offset`, опционально `include_results`) |
+| GET | `/api/tasks/{task_id}/events` | SSE обновлений (нужен Redis) |
+| POST | `/api/tasks/{task_id}/qa` | Вопрос по задаче → очередь **`rag`** |
+| GET | `/api/tasks/{task_id}/chunks/embeddings` | Эмбеддинги чанков → **`rag`** |
+| POST | `/api/auth/register`, `/api/auth/login`, `/api/auth/forgot-password`, `/api/auth/reset-password` | Аутентификация |
 
-- `POST /api/uploads/audio` - загрузить медиафайл и создать задачу инференса → `{ "task_id": "uuid" }`
-  - параметр формы: `force_disable_diarization` (`true/false`)
-- `GET /api/tasks/{task_id}` - статус и результат задачи
-- `GET /api/tasks?limit=50&offset=0` - список задач с пагинацией
-- `POST /api/auth/register`, `POST /api/auth/login`, `POST /api/auth/forgot-password`, `POST /api/auth/reset-password`
+**Очереди:** **`asr`** (транскрипт + опционально диаризация), **`llm`** (суммаризация после ASR), **`rag`** (индексация, QA, эмбеддинги для UI).
 
-**Фоновая обработка (`aio_celery`):**
+**Поток загрузки:** ffmpeg.wasm → WAV → `POST .../presign` (sha256 WAV) → PUT в MinIO → событие → **`/api/minio/events`** → очередь **`asr`**. Клиент: **`GET /api/tasks/{id}`** или SSE **`/api/tasks/{id}/events`**.
 
-- очередь `asr`: транскрипция через vLLM ASR;
-- очередь `pyannote`: подготовка диаризации и merge спикеров в транскрипцию;
-- очередь `llm`: суммаризация финальной транскрипции.
-
-Если диаризация включена, задача `llm` отправляется после merge спикеров; если выключена/пропущена — после ASR.
-
-**Frontend -> API:**
-
-1. Frontend конвертирует исходный файл (video/audio) в WAV через `ffmpeg.wasm`.
-2. Frontend отправляет файл в `POST /api/uploads/audio`.
-3. Frontend опрашивает `GET /api/tasks/{task_id}` до получения итогового результата.
-
-**Получение статуса и результата из БД:**
-
-- `GET /tasks/{task_id}` - статус и результат задачи (pending / processing / completed / failed)
-- `GET /tasks?limit=50&offset=0` - список задач с пагинацией
-
-### Структура проекта
+### Структура репозитория
 
 ```
+configs/                          # Hydra
 whisper_video_summarization/
-├── configs/              # Конфигурационные файлы Hydra
-│   ├── model/
-│   ├── logging/
-│   └── paths/
-├── whisper_video_summarization/
-│   ├── api/              # FastAPI приложение
-│   ├── llm/              # Модуль суммаризации через vLLM/OpenAI API
-│   ├── models/           # Модели и артефакты
-│   ├── whisper/          # Модуль транскрипции
-│   ├── streamlit/        # (устарел) ранее Streamlit интерфейс
-│   └── utils/            # Утилиты
-├── frontend/             # React + TypeScript (Vite) интерфейс
-├── Dockerfile            # образ API (FastAPI, без PyTorch)
-├── Dockerfile.worker     # образ Celery + Whisper/GPU
-├── Dockerfile.worker-pyannote  # образ pyannote worker
-├── k8s/                  # Kubernetes: Postgres, RabbitMQ, API, worker, frontend, ingress
-├── pyproject.toml        # uv/PEP 621 конфигурация
-└── README.md
+  api/                            # FastAPI
+  celery_app/                     # app, tasks, tasks_rag
+  db/                             # модели SQLAlchemy, миграции
+  llm/                            # infer, RAG, unit_graph, hierarchy_summarize, topic_graph_mindmap, …
+  serve/                          # Ray Serve: faster_whisper, pyannote, embeddings
+  whisper/                        # клиентская логика к ASR (HTTP и т.д.)
+  utils/                          # S3, метрики, task_events, …
+frontend/
+Dockerfile
+Dockerfile.worker
+Dockerfile.ray
+Dockerfile.vllm
+k8s/
+pyproject.toml
+README.md
 ```
 
 ### Требования
 
-- **Kubernetes** (или локальная разработка без кластера: uv + `npm run dev` для фронта)
-- **Docker** — для сборки образов приложения
+- Kubernetes для продакшена **или** локально: Python **≥3.12** (`pyproject.toml`), uv, отдельно **`uvicorn`** для API и **`npm run dev`** для фронта.
 
 ### Данные и тома
 
-В Kubernetes загрузки API и воркера должны смотреть на один и тот же путь (часто PVC **`whisper-uploads`**, mount в **`/app/data`** у обоих Deployment). Имена манифестов в **`k8s/`** могут отличаться — сверьтесь с вашей веткой. Локально: каталоги `data/`, `configs/`, при необходимости MLflow (`mlruns/`, `mlflow.db`).
+- **MinIO** (`k8s/minio.yaml`): прямая загрузка браузера по presign; воркер скачивает объект во временный файл. **`S3_PRESIGN_ENDPOINT_URL`** должен быть доступен клиенту (часто отдельный Ingress, см. `k8s/ingress.yaml`).
+- Уведомления бакета на **`/api/minio/events`**; при presign API может настроить notifications (ARN по умолчанию `arn:minio:sqs::api:webhook`, переопределение **`MINIO_WEBHOOK_QUEUE_ARN`**).
+- **PVC `whisper-uploads` → `/app/data`** — HF-кэш, данные воркеров llm/rag/vLLM по манифестам.
+
+Локально: **`data/`**, **`configs/`**; при необходимости MLflow (`mlruns/`, `mlflow.db`).
 
 ## Локальная разработка фронтенда
-
-Без Docker, с проксированием запросов к API:
 
 ```bash
 cd frontend
@@ -172,6 +152,10 @@ npm install
 npm run dev
 ```
 
-Примечание: frontend использует `ffmpeg.wasm`, поэтому первый запуск конвертации может занять больше времени (загрузка wasm-core).
+Порт **5173**, прокси **`/api`** → `http://127.0.0.1:8000` (`frontend/vite.config.ts`). Запуск API, например:
 
-Откройте http://localhost:5173. Запросы к `/api` будут проксироваться на http://127.0.0.1:8000 (запустите FastAPI отдельно).
+```bash
+uv run uvicorn whisper_video_summarization.api.app:app --host 127.0.0.1 --port 8000
+```
+
+Первый запуск конвертации в браузере может быть медленнее из‑за загрузки **ffmpeg.wasm**.

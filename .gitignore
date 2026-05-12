@@ -31,7 +31,7 @@ data/datasets/*
 !data/datasets/.gitkeep
 
 # vLLM / HF веса (версионируются через DVC: *.dvc в репозитории)
-data/models/vllm/openai__whisper-large-v3/
+data/models/vllm/Systran__faster-whisper-large-v3/
 data/models/vllm/unsloth__Qwen3.5-9B-GGUF/
 data/models/vllm/Qwen__Qwen3.5-9B/
 

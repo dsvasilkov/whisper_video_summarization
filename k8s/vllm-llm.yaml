@@ -1,0 +1,85 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: vllm-llm
+  namespace: whisper
+spec:
+  selector:
+    app: vllm-llm
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vllm-llm
+  namespace: whisper
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: vllm-llm
+  template:
+    metadata:
+      labels:
+        app: vllm-llm
+    spec:
+      containers:
+        - name: vllm-llm
+          image: whisper-vllm:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: HF_HOME
+              value: /app/data/.cache/huggingface
+          volumeMounts:
+            - name: uploads
+              mountPath: /app/data
+          args:
+            - --host
+            - 0.0.0.0
+            - --port
+            - "8000"
+            - --model
+            - cyankiwi/Qwen3.5-2B-AWQ-4bit
+            - --quantization
+            - compressed-tensors
+            - --dtype
+            - auto
+            - --trust-remote-code
+            - --served-model-name
+            - cyankiwi/Qwen3.5-2B-AWQ-4bit
+            - --reasoning-parser
+            - qwen3
+            - --language-model-only
+            - --gpu-memory-utilization
+            - "0.22"
+            - --max-num-seqs
+            - "1"
+            - --max-model-len
+            - "32768"
+          ports:
+            - containerPort: 8000
+          readinessProbe:
+            httpGet:
+              path: /v1/models
+              port: 8000
+            initialDelaySeconds: 100
+            periodSeconds: 10
+            failureThreshold: 50
+          resources:
+            requests:
+              cpu: "2"
+              memory: "10Gi"
+              nvidia.com/gpu: 1
+            limits:
+              cpu: "4"
+              memory: "14Gi"
+              nvidia.com/gpu: 1
+      volumes:
+        - name: uploads
+          persistentVolumeClaim:
+            claimName: whisper-uploads

@@ -1,0 +1,8 @@
+FROM vllm/vllm-openai:latest
+
+# Match k8s/vllm.yaml: whole-file WAV from the worker can exceed vLLM’s default (~25 MB).
+ENV VLLM_MAX_AUDIO_CLIP_FILESIZE_MB=512
+
+# Keep audio extras installed for Whisper ASR endpoint support.
+RUN python3 -m pip install --no-cache-dir \
+    "vllm[audio]"

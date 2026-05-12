@@ -1,7 +1,8 @@
 # Один файл: ConfigMap плагина + Job, который патчит nvidia-device-plugin-daemonset.
 # Нужны: namespace whisper, addon nvidia-device-plugin (или gpu).
 # Применение: kubectl apply -f k8s/namespace.yaml -f k8s/nvidia-time-slicing-apply.yaml
-# Повторный прогон: kubectl delete job -n whisper nvidia-time-slicing-apply --ignore-not-found && kubectl apply -f k8s/nvidia-time-slicing-apply.yaml
+# Повторный прогон: подождать ttlSecondsAfterFinished (Job удалится сам) и снова apply,
+#   либо сразу: kubectl delete job -n whisper nvidia-time-slicing-apply --ignore-not-found && kubectl apply -f k8s/nvidia-time-slicing-apply.yaml
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -83,7 +84,9 @@ metadata:
   name: nvidia-time-slicing-apply
   namespace: whisper
 spec:
-  ttlSecondsAfterFinished: 300
+  # После завершения Job удаляется, чтобы следующий `kubectl apply` создал новый Job
+  # (иначе Kubernetes оставляет completed Job и пишет job.batch/... unchanged — патч не выполняется).
+  ttlSecondsAfterFinished: 120
   backoffLimit: 2
   activeDeadlineSeconds: 300
   template:
@@ -110,6 +113,13 @@ spec:
               kubectl -n kube-system patch daemonset nvidia-device-plugin-daemonset \
                 --type=strategic \
                 --patch-file=/patch/patch.yaml
+              args=$(kubectl -n kube-system get ds nvidia-device-plugin-daemonset \
+                -o jsonpath='{.spec.template.spec.containers[?(@.name=="nvidia-device-plugin-ctr")].args[*]}')
+              echo "nvidia-device-plugin-ctr args: ${args}"
+              echo "${args}" | grep -q -- '--config-file=/config/config.yaml' || {
+                echo "patch did not apply --config-file (got args above)" >&2
+                exit 1
+              }
               # rollout status требует list/watch — с resourceNames в Role недоступно; ждём по get
               for j in $(seq 1 90); do
                 d=$(kubectl -n kube-system get ds nvidia-device-plugin-daemonset -o jsonpath='{.status.desiredNumberScheduled}')

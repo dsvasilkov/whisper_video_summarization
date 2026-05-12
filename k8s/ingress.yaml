@@ -5,6 +5,11 @@ metadata:
   namespace: whisper
   annotations:
     nginx.ingress.kubernetes.io/proxy-body-size: "500m"
+    # SSE /api/tasks/*/events: не буферизовать ответ.
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+    # Long-running streaming connections.
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
 spec:
   ingressClassName: nginx
   rules:
@@ -25,4 +30,14 @@ spec:
                 name: whisper-frontend
                 port:
                   number: 80
+    - host: minio.whisper.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: minio
+                port:
+                  number: 9000
 

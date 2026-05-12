@@ -1,0 +1,384 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "id": 1,
+      "title": "Whisper: audio sec / inference sec",
+      "description": "Ray Serve Faster-Whisper (job=ray-serve): сумма секунд аудио / сумма секунд inference после приёма тела запроса.",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "fillOpacity": 0,
+            "showPoints": "auto",
+            "spanNulls": true,
+            "lineWidth": 2,
+            "lineStyle": {
+              "fill": "solid"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(rate(whisper_serve_input_audio_seconds_total{job=\"ray-serve\"}[5m])) / sum(rate(whisper_serve_inference_seconds_total{job=\"ray-serve\"}[5m]))",
+          "legendFormat": "avg"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Qwen: generation tokens/s (vLLM server)",
+      "description": "Счётчик generation tokens с пода vLLM (job=vllm-llm, /metrics).",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "fillOpacity": 0,
+            "showPoints": "auto",
+            "spanNulls": true,
+            "lineWidth": 2,
+            "lineStyle": {
+              "fill": "solid"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "(sum(rate({__name__=\"vllm:generation_tokens_total\",job=\"vllm-llm\"}[5m])) or sum(rate(vllm_generation_tokens_total{job=\"vllm-llm\"}[5m])))",
+          "legendFormat": "tokens/s"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Average task time per component",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Секунды компонента на одну InferenceTask (одно observe при COMPLETED/FAILED). Qwen/embeddings из _meta после суммаризации. rate[5m] — более стабильный график, меньше «обрывов». Значения из JSONB читаются через float() (в т.ч. Decimal). Embeddings — только unit_graph в LLM (не RAG index).",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "fillOpacity": 0,
+            "showPoints": "auto",
+            "spanNulls": true,
+            "lineWidth": 2,
+            "lineStyle": {
+              "fill": "solid"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (task_type, status) (rate(task_component_wall_seconds_sum{component=\"whisper\"}[5m])) / sum by (task_type, status) (rate(task_component_wall_seconds_count{component=\"whisper\"}[5m]))",
+          "legendFormat": "whisper"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (task_type, status) (rate(task_component_wall_seconds_sum{component=\"qwen\"}[5m])) / sum by (task_type, status) (rate(task_component_wall_seconds_count{component=\"qwen\"}[5m]))",
+          "legendFormat": "qwen"
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (task_type, status) (rate(task_component_wall_seconds_sum{component=\"pyannote\"}[5m])) / sum by (task_type, status) (rate(task_component_wall_seconds_count{component=\"pyannote\"}[5m]))",
+          "legendFormat": "pyannote" 
+        },
+        {
+          "refId": "D",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (task_type, status) (rate(task_component_wall_seconds_sum{component=\"embeddings\"}[5m])) / sum by (task_type, status) (rate(task_component_wall_seconds_count{component=\"embeddings\"}[5m]))",
+          "legendFormat": "embeddings"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "API: avg latency by route",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 8,
+        "x": 0,
+        "y": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 0,
+            "showPoints": "auto",
+            "spanNulls": false,
+            "lineWidth": 2,
+            "lineStyle": {
+              "fill": "solid"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (route, method) (rate(api_http_request_duration_seconds_sum[5m])) / sum by (route, method) (rate(api_http_request_duration_seconds_count[5m]))",
+          "legendFormat": "{{method}} {{route}}"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "GPU VRAM",
+      "description": "Нужны метрики inference_gpu_memory_used_bytes и inference_gpu_memory_total_bytes (NVML) на скрейпе воркера.",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 8,
+        "x": 8,
+        "y": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 0,
+            "showPoints": "auto",
+            "spanNulls": false,
+            "lineWidth": 2,
+            "lineStyle": {
+              "fill": "solid"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "100 * sum(max by (gpu_index) (inference_gpu_memory_used_bytes)) / clamp_min(sum(max by (gpu_index) (inference_gpu_memory_total_bytes)), 1)",
+          "legendFormat": "VRAM"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "title": "Task total: creation → terminal status",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 8,
+        "x": 16,
+        "y": 8
+      },
+      "description": "Одна точка на задачу в момент COMPLETED/FAILED: created_at → updated_at в БД. График — среднее duration по rate() за окно (между завершениями линия может падать к 0).",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 0,
+            "showPoints": "auto",
+            "spanNulls": false,
+            "lineWidth": 2,
+            "lineStyle": {
+              "fill": "solid"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(rate(task_total_seconds_sum[5m])) / sum(rate(task_total_seconds_count[5m]))",
+          "legendFormat": "Avg"
+        }
+      ]
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": [
+    "whisper",
+    "video-summarization"
+  ],
+  "templating": {
+    "list": []
+  },
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "",
+  "title": "Whisper Video Summarization — Overview",
+  "uid": "whisper-overview",
+  "version": 11,
+  "weekStart": ""
+}

@@ -1,9 +1,0 @@
-FROM vllm/vllm-openai:latest
-
-# Match k8s/vllm.yaml: whole-file WAV from the worker can exceed vLLM’s default (~25 MB).
-ENV VLLM_MAX_AUDIO_CLIP_FILESIZE_MB=512
-
-# Whisper ASR: /v1/audio/transcriptions needs the audio extra.
-# LLM side (separate Deployment): use upstream vLLM + Hugging Face weights, e.g. Qwen/Qwen3.5-0.8B.
-
-RUN python3 -m pip install --no-cache-dir "vllm[audio]"

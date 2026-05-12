@@ -1,0 +1,115 @@
+# Ray Serve: pyannote + embeddings + faster-whisper ASR (`serve run` multi-app).
+# Образ: docker build -f Dockerfile.ray -t whisper-ray:latest .
+#
+# Celery ASR worker:
+#   WHISPER_SERVE_URL=http://ray-serve.whisper.svc.cluster.local:8000/whisper
+#   PYANNOTE_SERVE_URL=http://ray-serve.whisper.svc.cluster.local:8000/pyannote
+# RAG:
+#   RAG_EMBEDDINGS_SERVE_URL=http://ray-serve.whisper.svc.cluster.local:8000/embeddings
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ray-serve
+  namespace: whisper
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: ray-serve
+  template:
+    metadata:
+      labels:
+        app: ray-serve
+    spec:
+      containers:
+        - name: serve
+          image: whisper-ray:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8000
+            - name: dashboard
+              containerPort: 8265
+          resources:
+            requests:
+              memory: "8Gi"
+              cpu: "4"
+              nvidia.com/gpu: 1
+            limits:
+              memory: "16Gi"
+              cpu: "6"
+              nvidia.com/gpu: 1
+          env:
+            - name: PYTHONPATH
+              value: /app
+            - name: HF_HOME
+              value: /app/data/.cache/huggingface
+            - name: PYANNOTE_DIARIZATION_MODEL
+              value: pyannote/speaker-diarization-3.1
+            - name: PYANNOTE_HF_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: pyannote-secrets
+                  key: PYANNOTE_HF_TOKEN
+            - name: HF_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: pyannote-secrets
+                  key: PYANNOTE_HF_TOKEN
+            - name: HF_HUB_DISABLE_XET
+              value: "1"
+            - name: RAG_EMBEDDING_MODEL_NAME
+              value: BAAI/bge-m3
+            - name: WHISPER_MODEL
+              value: Systran/faster-whisper-large-v3
+            - name: WHISPER_COMPUTE_TYPE
+              value: int8
+            - name: WHISPER_DEVICE
+              value: cuda
+            # VAD + батч (BatchedInferencePipeline): макс. клип (сек), как vLLM max_clip_duration_s.
+            - name: WHISPER_CHUNK_LENGTH
+              value: "30"
+            - name: WHISPER_BATCH_SIZE
+              value: "1"
+            - name: SERVE_SLOW_STARTUP_WARNING_S
+              value: "300"
+            - name: RAY_ACCEL_ENV_VAR_OVERRIDE_ON_ZERO
+              value: "0"
+            - name: PYTORCH_CUDA_ALLOC_CONF
+              value: expandable_segments:True
+          command:
+            - /bin/bash
+            - -c
+            - exec /opt/venv/bin/serve run /app/k8s/ray/serve-multiapp.yaml --blocking
+          volumeMounts:
+            - name: uploads
+              mountPath: /app/data
+            - name: dshm
+              mountPath: /dev/shm
+      volumes:
+        - name: uploads
+          persistentVolumeClaim:
+            claimName: whisper-uploads
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 5Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ray-serve
+  namespace: whisper
+spec:
+  selector:
+    app: ray-serve
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000
+    - name: dashboard
+      port: 8265
+      targetPort: 8265

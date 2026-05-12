@@ -6,6 +6,8 @@ metadata:
   namespace: whisper
 spec:
   replicas: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: whisper-worker-llm
@@ -21,6 +23,15 @@ spec:
           ports:
             - name: metrics
               containerPort: 9101
+          startupProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -lc
+                - exec curl -fsS "${VLLM_LLM_BASE_URL}/models" >/dev/null
+            periodSeconds: 2
+            timeoutSeconds: 5
+            failureThreshold: 30
           volumeMounts:
             - name: uploads
               mountPath: /app/data
@@ -47,8 +58,17 @@ spec:
               value: postgresql+psycopg2://postgres:postgres@postgres.whisper.svc.cluster.local:5432/whisper_inference
             - name: CELERY_BROKER_URL
               value: amqp://guest:guest@rabbitmq.whisper.svc.cluster.local:5672//
+            - name: CELERY_RESULT_BACKEND
+              value: redis://redis.whisper.svc.cluster.local:6379/0
             - name: VLLM_LLM_BASE_URL
               value: http://vllm-llm.whisper.svc.cluster.local:8000/v1
+            # unit_graph эмбеддит тысячи фрагментов до первого вызова vLLM; без URL грузится BGE в процесс воркера (очень долго).
+            - name: RAG_EMBEDDINGS_SERVE_URL
+              value: http://ray-serve.whisper.svc.cluster.local:8000/embeddings
+            - name: QDRANT_URL
+              value: http://qdrant.whisper.svc.cluster.local:6333
+            - name: HF_HOME
+              value: /app/data/hf
             - name: WORKER_METRICS_PORT
               value: "9101"
             - name: PROMETHEUS_MULTIPROC_DIR

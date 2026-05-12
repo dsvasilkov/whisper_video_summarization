@@ -47,7 +47,7 @@
 .main {
   flex: 1;
   padding: 1.5rem;
-  max-width: 720px;
+  max-width: 960px;
   margin: 0 auto;
   width: 100%;
 }
@@ -219,6 +219,143 @@
   box-sizing: border-box;
 }
 
+.input-group .input-textarea {
+  width: 100%;
+  padding: 0.5rem;
+  border: 1px solid #3f3f46;
+  border-radius: 6px;
+  background: #18181b;
+  color: #e4e4e7;
+  font-size: 0.875rem;
+  box-sizing: border-box;
+  font-family: inherit;
+  resize: vertical;
+  min-height: 4rem;
+}
+
+.qa-block .btn {
+  margin-top: 0.25rem;
+}
+
+.qa-answer {
+  margin-top: 1rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid #27272a;
+}
+
+.qa-answer h4 {
+  margin: 0 0 0.5rem;
+  font-size: 0.8125rem;
+  color: #a1a1aa;
+  font-weight: 600;
+}
+
+.llm-markdown {
+  font-size: 0.875rem;
+  line-height: 1.55;
+  color: #e4e4e7;
+}
+
+.llm-markdown p {
+  margin: 0 0 0.65em;
+}
+
+.llm-markdown p:last-child {
+  margin-bottom: 0;
+}
+
+.llm-markdown h1,
+.llm-markdown h2,
+.llm-markdown h3 {
+  margin: 1em 0 0.4em;
+  font-size: 1.05em;
+  font-weight: 600;
+  color: #fafafa;
+}
+
+.llm-markdown h1:first-child,
+.llm-markdown h2:first-child,
+.llm-markdown h3:first-child {
+  margin-top: 0;
+}
+
+.llm-markdown ul,
+.llm-markdown ol {
+  margin: 0.35em 0 0.65em;
+  padding-left: 1.35rem;
+}
+
+.llm-markdown li {
+  margin: 0.2em 0;
+}
+
+.llm-markdown code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.88em;
+  background: #27272a;
+  padding: 0.12em 0.35em;
+  border-radius: 4px;
+}
+
+.llm-markdown pre {
+  margin: 0.65em 0;
+  padding: 0.65rem 0.75rem;
+  background: #18181b;
+  border: 1px solid #27272a;
+  border-radius: 6px;
+  overflow: auto;
+}
+
+.llm-markdown pre code {
+  background: none;
+  padding: 0;
+}
+
+.llm-markdown blockquote {
+  margin: 0.5em 0;
+  padding-left: 0.85rem;
+  border-left: 3px solid #3f3f46;
+  color: #d4d4d8;
+}
+
+.llm-markdown strong {
+  color: #fafafa;
+}
+
+.llm-markdown .katex {
+  color: #e4e4e7;
+  font-size: 1em;
+}
+
+.llm-markdown .katex-display {
+  margin: 0.75em 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.transcript-md-panel {
+  margin: 0;
+  padding: 0.75rem;
+  border-radius: 8px;
+  background: #121216;
+  border: 1px solid #27272a;
+  max-height: min(50vh, 28rem);
+  overflow: auto;
+}
+
+.transcript-md-panel .llm-markdown {
+  font-size: 0.8125rem;
+}
+
+.mindmap-tooltip-plain {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.mindmap-detail-md {
+  white-space: normal;
+}
+
 .btn-secondary {
   background: #27272a;
   color: #e4e4e7;
@@ -329,6 +466,10 @@
   max-height: 85vh;
   overflow: auto;
   padding: 1rem 1.25rem;
+}
+
+.modal.modal--wide {
+  max-width: min(1120px, 96vw);
 }
 
 .modal-head {
@@ -518,10 +659,615 @@
   min-height: 0;
 }
 
+.summary-view-toggle {
+  align-self: stretch;
+  width: 100%;
+  max-width: 420px;
+}
+
+.mindmap-panel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.mindmap-panel--fullscreen {
+  min-height: 0;
+}
+
+/* Поверх всего приложения: шапка, вкладки «Транскрипция / Суммаризация», Mind map / Текст, RAG. */
+.mindmap-panel.mindmap-panel--viewport-fs {
+  position: fixed;
+  inset: 0;
+  z-index: 100000;
+  box-sizing: border-box;
+  min-height: 100dvh;
+  padding: max(0.5rem, env(safe-area-inset-top)) max(0.85rem, env(safe-area-inset-right))
+    max(0.75rem, env(safe-area-inset-bottom)) max(0.85rem, env(safe-area-inset-left));
+  background: #0a0a0c;
+  gap: 0.5rem;
+}
+
+.mindmap-panel.mindmap-panel--viewport-fs .mindmap-canvas-wrap {
+  flex: 1;
+  min-height: 0;
+  height: auto !important;
+  max-height: none;
+}
+
+.mindmap-toolbar-hint--fs {
+  flex: 1 1 180px;
+}
+
+.mindmap-fs-exit {
+  font-weight: 600;
+}
+
+.mindmap-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.65rem 1rem;
+}
+
+.mindmap-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  font-size: 0.875rem;
+  color: #e4e4e7;
+  user-select: none;
+}
+
+.mindmap-toggle input {
+  width: 1rem;
+  height: 1rem;
+  accent-color: #3b82f6;
+  cursor: pointer;
+}
+
+.mindmap-toolbar-hint {
+  flex: 1 1 200px;
+  min-width: 0;
+  line-height: 1.35;
+}
+
+.mindmap-canvas-wrap {
+  height: min(52vh, 520px);
+  width: 100%;
+  border-radius: 8px;
+  border: 1px solid #27272a;
+  overflow: hidden;
+  background: #0f0f12;
+}
+
+.mindmap-panel--fullscreen .mindmap-canvas-wrap {
+  height: calc(100dvh - 260px);
+  min-height: 22rem;
+  max-height: none;
+}
+
+@media (max-width: 640px) {
+  .mindmap-panel--fullscreen .mindmap-canvas-wrap {
+    height: calc(100dvh - 240px);
+    min-height: 16rem;
+  }
+}
+
+.mindmap-canvas-wrap .react-flow {
+  background: #0f0f12;
+}
+
+.mindmap-controls button {
+  background: #27272a;
+  border-color: #3f3f46;
+  color: #e4e4e7;
+}
+
+.mindmap-minimap {
+  background: #18181b !important;
+}
+
+.mindmap-expand-hint {
+  margin: 0;
+}
+
+.topic-flow-node {
+  position: relative;
+  max-width: 240px;
+  padding: 0.5rem 0.65rem;
+  border-radius: 8px;
+  border: 2px solid #3b82f6;
+  background: #18181b;
+  color: #e4e4e7;
+  font-size: 0.75rem;
+  line-height: 1.35;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+}
+
+.topic-flow-node--circle {
+  border-radius: 50%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  box-sizing: border-box;
+  max-width: none;
+  width: 6.35rem;
+  height: 6.35rem;
+  padding: 0.45rem 0.5rem;
+  aspect-ratio: 1;
+}
+
+.topic-flow-node.topic-flow-node--circle.topic-flow-node--click-toggle:not(.topic-flow-node--keyword) {
+  cursor: pointer;
+}
+
+.topic-flow-node--keyword.topic-flow-node--circle {
+  width: 5rem;
+  height: 5rem;
+  padding: 0.35rem 0.4rem;
+  font-size: 0.625rem;
+  border-style: dashed;
+  opacity: 0.95;
+}
+
+.topic-flow-node--keyword.topic-flow-node--circle .topic-flow-node-title {
+  font-size: 0.6875rem;
+  font-weight: 500;
+  margin-bottom: 0;
+}
+
+.topic-flow-node--macro.topic-flow-node--circle {
+  width: 6.85rem;
+  height: 6.85rem;
+  border-width: 2px;
+  background: linear-gradient(165deg, #1e293b 0%, #18181b 55%);
+}
+
+.topic-flow-node--lecture.topic-flow-node--circle {
+  width: 7.5rem;
+  height: 7.5rem;
+  border-width: 2px;
+  background: linear-gradient(145deg, #334155 0%, #0f172a 60%);
+  font-size: 0.8125rem;
+}
+
+.topic-flow-node--theme.topic-flow-node--circle {
+  width: 7rem;
+  height: 7rem;
+  border-width: 2px;
+  background: linear-gradient(165deg, #1e293b 0%, #18181b 55%);
+}
+
+.topic-flow-node--subtopic.topic-flow-node--circle {
+  width: 6.5rem;
+  height: 6.5rem;
+  border-width: 2px;
+  background: #18181b;
+}
+
+.topic-flow-node--circle.topic-flow-node--branch-collapsed {
+  border-style: dashed;
+  opacity: 0.9;
+}
+
+.topic-flow-node--selected {
+  box-shadow: 0 0 0 2px #60a5fa, 0 4px 14px rgba(0, 0, 0, 0.35);
+}
+
+.topic-flow-node--circle .topic-flow-node-title {
+  margin: 0;
+  font-weight: 600;
+  font-size: 0.75rem;
+  line-height: 1.2;
+  max-height: 100%;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 5;
+  line-clamp: 5;
+  word-break: break-word;
+  hyphens: auto;
+}
+
+.topic-flow-node--lecture.topic-flow-node--circle .topic-flow-node-title {
+  font-size: 0.8125rem;
+}
+
+.topic-flow-handle {
+  width: 8px !important;
+  height: 8px !important;
+  background: #52525b !important;
+  border: none !important;
+}
+
+.mindmap-node-tooltip {
+  position: fixed;
+  z-index: 10050;
+  max-width: min(22rem, calc(100vw - 2rem));
+  padding: 0.75rem 1rem;
+  border-radius: 10px;
+  border: 1px solid #3f3f46;
+  background: #121216;
+  color: #e4e4e7;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
+  pointer-events: auto;
+}
+
+.mindmap-node-tooltip-title {
+  font-weight: 600;
+  font-size: 0.875rem;
+  color: #93c5fd;
+  margin: 0 0 0.45rem;
+  line-height: 1.3;
+}
+
+.mindmap-node-tooltip-times {
+  margin: 0 0 0.5rem;
+  font-size: 0.75rem;
+  line-height: 1.35;
+  color: #a1a1aa;
+}
+
+.mindmap-node-tooltip-body {
+  margin: 0;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  white-space: normal;
+  word-break: break-word;
+  max-height: min(55vh, 24rem);
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #3f3f46 #18181b;
+}
+
+.mindmap-node-tooltip-body::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.mindmap-node-tooltip-body::-webkit-scrollbar-track {
+  background: #18181b;
+  border-radius: 4px;
+}
+
+.mindmap-node-tooltip-body::-webkit-scrollbar-thumb {
+  background: #3f3f46;
+  border-radius: 4px;
+}
+
+.mindmap-node-tooltip-body::-webkit-scrollbar-thumb:hover {
+  background: #52525b;
+}
+
+.mindmap-node-tooltip-toggle {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 0.625rem;
+  margin-top: 0.65rem;
+  padding-top: 0.55rem;
+  border-top: 1px solid #27272a;
+}
+
+.mindmap-tooltip-dot {
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  padding: 0;
+  border: 2px solid #52525b;
+  background: transparent;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.12s ease, border-color 0.12s ease, transform 0.12s ease;
+}
+
+.mindmap-tooltip-dot:hover {
+  border-color: #94a3b8;
+}
+
+.mindmap-tooltip-dot--active {
+  background: #3b82f6;
+  border-color: #60a5fa;
+  box-shadow: 0 0 0 1px rgba(96, 165, 250, 0.35);
+}
+
+.transcript-item-header.hierarchy-item-header {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.35rem;
+}
+
+.hierarchy-item-header-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.65rem;
+  width: 100%;
+}
+
+.hierarchy-row-theme {
+  flex: 1;
+  min-width: 0;
+  font-weight: 600;
+  font-size: 0.8125rem;
+  color: #93c5fd;
+  line-height: 1.35;
+  text-align: left;
+}
+
+.hierarchy-row-times {
+  flex-shrink: 0;
+  font-size: 0.75rem;
+  line-height: 1.35;
+  color: #a1a1aa;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  max-width: 55%;
+}
+
+.hierarchy-expanded-block {
+  border-top: 1px solid #27272a;
+  padding: 0 0.75rem 0.65rem;
+  background: #0c0c0f;
+}
+
+.hierarchy-expanded-scroll.hierarchy-lecture-scroll {
+  max-height: min(55vh, 28rem);
+}
+
+.hierarchy-inline-toggle {
+  margin-left: 0;
+  margin-right: 0;
+}
+
+.hierarchy-lecture-header-top {
+  margin-bottom: 0.35rem;
+}
+
+.mindmap-detail {
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+  border: 1px solid #27272a;
+  background: #121216;
+}
+
+.mindmap-detail-title {
+  margin: 0 0 0.5rem;
+  font-size: 0.9rem;
+  color: #93c5fd;
+}
+
+.mindmap-detail-body {
+  margin: 0;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  scrollbar-width: thin;
+  scrollbar-color: #3f3f46 #18181b;
+}
+
+.mindmap-detail-body::-webkit-scrollbar {
+  width: 8px;
+}
+
+.mindmap-detail-body::-webkit-scrollbar-track {
+  background: #18181b;
+  border-radius: 4px;
+}
+
+.mindmap-detail-body::-webkit-scrollbar-thumb {
+  background: #3f3f46;
+  border-radius: 4px;
+}
+
+.mindmap-detail-body::-webkit-scrollbar-thumb:hover {
+  background: #52525b;
+}
+
 .summary-viewer {
   display: flex;
   flex-direction: column;
   gap: 0.9rem;
+}
+
+.summary-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.summary-depth-group {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.summary-depth-hint {
+  flex: 0 0 auto;
+  margin: 0;
+  line-height: 1.45;
+  white-space: nowrap;
+}
+
+.summary-depth-rail {
+  flex: 1 1 8rem;
+  min-width: 7rem;
+  max-width: 18rem;
+  padding: 0.2rem 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.summary-expand-all-btn,
+.summary-mindmap-btn {
+  flex-shrink: 0;
+}
+
+.summary-depth-markers {
+  display: flex;
+  justify-content: space-between;
+  padding: 0 min(8px, 2.5%);
+  margin-top: -2px;
+  pointer-events: none;
+}
+
+.summary-depth-markers span {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #52525b;
+  flex-shrink: 0;
+}
+
+/* Ползунок без подписей на дорожке: только метки-точки по шагам */
+.summary-depth-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 1.5rem;
+  background: transparent;
+  cursor: pointer;
+}
+
+.summary-depth-slider:focus {
+  outline: none;
+}
+
+.summary-depth-slider:focus-visible {
+  outline: 2px solid #6366f1;
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.summary-depth-slider::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 3px;
+  background: linear-gradient(
+    to right,
+    #3f3f46 0%,
+    #3f3f46 100%
+  );
+  background-repeat: no-repeat;
+  background-size: 100% 100%;
+  box-shadow: inset 0 0 0 1px #27272a;
+}
+
+.summary-depth-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  margin-top: -5px;
+  border-radius: 50%;
+  background: #e4e4e7;
+  border: 2px solid #52525b;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
+}
+
+.summary-depth-slider::-moz-range-track {
+  height: 6px;
+  border-radius: 3px;
+  background: #3f3f46;
+  box-shadow: inset 0 0 0 1px #27272a;
+}
+
+.summary-depth-slider::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #e4e4e7;
+  border: 2px solid #52525b;
+  cursor: pointer;
+}
+
+.hierarchy-accordion {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.hierarchy-theme-block {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.hierarchy-theme-heading {
+  margin: 0;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: #71717a;
+  user-select: none;
+  cursor: default;
+}
+
+.hierarchy-item-label {
+  font-weight: 500;
+  text-align: left;
+}
+
+.hierarchy-subtopic-title {
+  flex: 1;
+  min-width: 0;
+}
+
+.hierarchy-subtopic-times {
+  flex-shrink: 0;
+}
+
+.hierarchy-source-text {
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 0.875rem;
+  line-height: 1.45;
+}
+
+.hierarchy-theme-body {
+  padding-top: 0.25rem;
+}
+
+.hierarchy-lecture-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid #27272a;
+  border-radius: 8px;
+  background: #121216;
+}
+
+.hierarchy-lecture-times {
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+  color: #a1a1aa;
+  font-family: ui-monospace, monospace;
+}
+
+.hierarchy-lecture-md {
+  margin: 0;
+}
+
+/* На вкладке Mind map разворачиваем холст на ширину окна (внутри узкой .main). */
+.summary-viewer--mindmap-full {
+  width: 100vw;
+  max-width: 100vw;
+  margin-left: calc(50% - 50vw);
+  margin-right: calc(50% - 50vw);
+  box-sizing: border-box;
+  padding-left: max(0.75rem, env(safe-area-inset-left));
+  padding-right: max(0.75rem, env(safe-area-inset-right));
 }
 
 .summary-section h5 {

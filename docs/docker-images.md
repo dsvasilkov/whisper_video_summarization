@@ -1,9 +1,9 @@
 # Образы Docker
 
-- **`Dockerfile`** — FastAPI API-приложение (группа зависимостей `monitoring`), без torch/CUDA.
-- **`Dockerfile.worker`** — базовый образ Celery worker для очередей `asr` и `llm`.
-- **`Dockerfile.worker-pyannote`** — отдельный Celery worker для очереди `pyannote` (диаризация и merge спикеров).
-- **`Dockerfile.vllm-asr`** — vLLM OpenAI server для Whisper ASR с `vllm[audio]`.
+- **`Dockerfile`** — FastAPI API-приложение: по умолчанию **uv** с `--group inference --group monitoring` (см. `UV_GROUP_FLAGS` в файле).
+- **`Dockerfile.worker`** — базовый образ Celery worker для очередей `asr`, `llm` и `rag` (ASR по HTTP к Ray Serve `WHISPER_SERVE_URL`; диаризация — `PYANNOTE_SERVE_URL`).
+- **`Dockerfile.ray`** — Ray Serve multi-app: pyannote, embeddings, faster-whisper (`Systran/faster-whisper-large-v3`, int8).
+- **`Dockerfile.vllm`** — образ vLLM OpenAI server для LLM: `vllm[audio]`.
 - Мониторинг выполняется связкой Prometheus + Grafana (`k8s/monitoring.yaml`).
 
 Сборка API:
@@ -12,23 +12,23 @@
 docker build -t whisper-api:latest .
 ```
 
-Сборка Celery worker (общий образ для `asr`/`llm`):
+Сборка Celery worker (общий образ для `asr` / `llm` / `rag`):
 
 ```bash
 docker build -f Dockerfile.worker -t whisper-worker:latest .
 docker build -f Dockerfile.worker -t whisper-worker-asr:latest .
 ```
 
-Сборка Celery worker для pyannote:
+Сборка Ray Serve:
 
 ```bash
-docker build -f Dockerfile.worker-pyannote -t whisper-worker-pyannote:latest .
+docker build -f Dockerfile.ray -t whisper-ray:latest .
 ```
 
-Сборка vLLM ASR (audio):
+Сборка vLLM (OpenAI server):
 
 ```bash
-docker build -f Dockerfile.vllm-asr -t whisper-vllm-asr:latest .
+docker build -f Dockerfile.vllm -t whisper-vllm:latest .
 ```
 
 Сборка frontend:

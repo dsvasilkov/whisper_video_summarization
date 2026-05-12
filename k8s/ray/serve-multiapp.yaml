@@ -1,0 +1,51 @@
+# Multi-app Serve: pyannote, embeddings, faster-whisper ASR на одной GPU (0.33 + 0.33 + 0.34).
+# При двух GPU в узле можно поднять num_gpus до 1.0 на деплой.
+
+proxy_location: HeadOnly
+
+http_options:
+  host: 0.0.0.0
+  port: 8000
+
+grpc_options:
+  port: 9000
+  grpc_servicer_functions: []
+
+logging_config:
+  encoding: TEXT
+  log_level: INFO
+  logs_dir: null
+  enable_access_log: true
+  additional_log_standard_attrs: []
+
+applications:
+  - name: pyannote
+    route_prefix: /pyannote
+    import_path: whisper_video_summarization.serve.pyannote_app:app
+    runtime_env: {}
+    deployments:
+      - name: PyannoteDiarizer
+        max_ongoing_requests: 1
+        ray_actor_options:
+          num_cpus: 0.25
+          num_gpus: 0.25
+  - name: embeddings
+    route_prefix: /embeddings
+    import_path: whisper_video_summarization.serve.embeddings_app:app
+    runtime_env: {}
+    deployments:
+      - name: BgeM3Embedder
+        max_ongoing_requests: 1
+        ray_actor_options:
+          num_cpus: 0.25
+          num_gpus: 0.18
+  - name: whisper
+    route_prefix: /whisper
+    import_path: whisper_video_summarization.serve.faster_whisper_app:app
+    runtime_env: {}
+    deployments:
+      - name: FasterWhisperAsr
+        max_ongoing_requests: 1
+        ray_actor_options:
+          num_cpus: 0.25
+          num_gpus: 0.17
